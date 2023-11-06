@@ -1,0 +1,7 @@
+<py2neo.matching.NodeMatch object at 0x7f092559cf10>
+'population size: 4315'
+'Number of genes in the query: 113'
+'Number of significative adjusted p-value(0.05): 3'
+PWY-8243	0.0	11/11	colanic acid (<i>Escherichia coli</i> K12) biosynthesis	b2045, b2054, b2057, b2044, b2050, b2047, b2056, b2058, b2059, b2046, b2055
+COLANSYN-PWY	0.00012770601720235586	4/11	colanic acid building blocks biosynthesis	b2052, b2053, b2049, b2048
+PWY-66	0.0006798851028557706	2/2	GDP-L-fucose biosynthesis I (from GDP-D-mannose)	b2052, b2053

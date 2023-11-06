@@ -1,0 +1,15 @@
+<py2neo.matching.NodeMatch object at 0x7f7b1a3a4950>
+'population size: 4315'
+'Number of genes in the query: 113'
+'Number of significative adjusted p-value(0.05): 11'
+PWY-8243	4.834921747751142e-83	11/11	colanic acid (<i>Escherichia coli</i> K12) biosynthesis	b2050, b2047, b2055, b2058, b2057, b2056, b2059, b2054, b2044, b2046, b2045
+PWY-66	1.4415722615875807e-10	2/2	GDP-L-fucose biosynthesis I (from GDP-D-mannose)	b2053, b2052
+COLANSYN-PWY	1.2625566047174687e-09	4/11	colanic acid building blocks biosynthesis	b2049, b2048, b2053, b2052
+PWY-5659	0.0001249436524902118	2/5	GDP-mannose biosynthesis	b2049, b2048
+FERMENTATION-PWY	1.0	1/34	mixed acid fermentation	b1380
+HEXITOLDEGSUPER-PWY	1.0	1/29	superpathway of hexitol degradation (bacteria)	b1779
+PWY-5484	1.0	1/22	glycolysis II (from fructose 6-phosphate)	b1779
+GLYCOLYSIS-E-D	1.0	1/33	superpathway of glycolysis and the Entner-Doudoroff pathway	b1779
+GLYCOLYSIS-TCA-GLYOX-BYPASS	1.0	1/54	superpathway of glycolysis, pyruvate dehydrogenase, TCA, and glyoxylate bypass	b1779
+GLYCOLYSIS	1.0	1/29	glycolysis I (from glucose 6-phosphate)	b1779
+GLUCONEO-PWY	1.0	1/22	gluconeogenesis I	b1779
