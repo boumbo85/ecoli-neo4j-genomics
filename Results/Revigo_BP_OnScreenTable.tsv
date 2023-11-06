@@ -1,0 +1,4 @@
+TermID	Name	Value	LogSize	Frequency	Uniqueness	Dispensability	Representative
+GO:0009242	"colanic acid biosynthetic process"	-3.5934721327537336	1.462397997898956	0.00009313306000110695	1	0	null
+GO:0009408	"response to heat"	-16.44814975415026	4.702508082108066	0.1676661174477071	1	0	null
+GO:1902201	"negative regulation of bacterial-type flagellum-dependent cell motility"	-5.777736190552884	2.399673721481038	0.000831545178581312	1	0	null
