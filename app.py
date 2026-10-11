@@ -6,6 +6,7 @@
 from py2neo import * # conda install py2neo, monotonic
 from py2neo.matching import *
 import argparse
+import os
 from pprint import pprint
 from os.path import isfile
 import json
@@ -13,8 +14,17 @@ from scipy.stats import binom, hypergeom, chi2_contingency  # pip install scipy
 
 
 # CONNECTION TO NEO4J
-neo = Graph("bolt://localhost:7687",
-            auth=("neo4j","omybioinfo"))
+# Credentials are read from environment variables (never hard-code them):
+#   export NEO4J_URI="bolt://localhost:7687"
+#   export NEO4J_USER="neo4j"
+#   export NEO4J_PASSWORD="your-password"
+neo = Graph(
+    os.environ.get("NEO4J_URI", "bolt://localhost:7687"),
+    auth=(
+        os.environ.get("NEO4J_USER", "neo4j"),
+        os.environ.get("NEO4J_PASSWORD", "neo4j"),
+    ),
+)
 nodes = NodeMatcher(neo)
  
 
@@ -31,8 +41,10 @@ param = parser.parse_args()
 
 
 # Path Query
-path = '../query/query6.txt'
-
+path = '../query/set1.txt'
+# param = parser.parse_args(['-q', path, 
+                          # '-t', 'PubMed',
+                           #-'-c', '-v', '-l', '10'])
 
 # LOAD QUERY #######################################################################
 text = param.query
@@ -79,16 +91,16 @@ elif target == 'Pathway': # EXTRACT PATHWAY FROM query genes from the database:
     res = neo.run(cypher).to_table()
 
 elif target == 'InterPro': # EXTRACT Interpro FROM query genes from the database:
-    cypher = f"MATCH (k:{target})-[:encoded_in]->(g:Gene) WHERE g.id IN {list(query)} RETURN DISTINCT k.id" 
-    res = neo.run(cypher).to_table()
+  cypher = f"MATCH (k:{target})-[:encoded_in]->(g:Gene) WHERE g.id IN {list(query)} RETURN DISTINCT k.id" 
+  res = neo.run(cypher).to_table()
 
 elif target == 'PubMed': # EXTRACT PubMed FROM query genes from the database:
-    cypher = f"MATCH (k:{target})-[:cites]->(g:Gene) WHERE g.id IN {list(query)} RETURN DISTINCT k.id" 
-    res = neo.run(cypher).to_table()
+  cypher = f"MATCH (k:{target})-[:cites]->(g:Gene) WHERE g.id IN {list(query)} RETURN DISTINCT k.id" 
+  res = neo.run(cypher).to_table()
 
 if param.verbose:
-    pprint(f'Cyper request: {cypher}')
-    pprint(f'target set: {res}')
+  pprint(f'Cyper request: {cypher}')
+  pprint(f'target set: {res}')
 
 
 #  STATISTICAL TESTS #######################################################################
