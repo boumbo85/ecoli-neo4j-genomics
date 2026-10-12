@@ -3,6 +3,9 @@
 py2neo>=2021.2
 scipy>=1.7
 
+# Visualisation (plot_enrichment.py)
+matplotlib>=3.5
+
 # Only needed to regenerate the graph input files from raw sources
 # (gbff.to.bed.py, gbff.to.bnumber.GeneID.py, ncbi.py):
 # biopython>=1.79
