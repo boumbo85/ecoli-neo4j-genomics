@@ -109,19 +109,22 @@ d'identifiants anonymes.
 
 ```
 .
-├── app.py                     # outil principal d'enrichissement (Cypher + stats)
+├── app.py                     # outil principal d'enrichissement (CLI + requêtes Cypher)
+├── enrichment.py              # mesures statistiques (fonctions pures, testées)
+├── load_graph.cypher          # construit le graphe depuis csv/ (LOAD CSV)
+├── load_graph.sh              # copie les CSV + exécute load_graph.cypher
+├── docker-compose.yml         # instance Neo4j reproductible
+├── tests/                     # tests unitaires des mesures d'enrichissement
 ├── scripts/
 │   ├── GeneOntology.py        # parseur OBO → nœuds GO & arêtes is_a/part_of
 │   ├── gbff.to.bed.py         # annotation du génome → BED (coordonnées des gènes)
 │   ├── gbff.to.bnumber.GeneID.py  # association bnumber ↔ GeneID NCBI
 │   ├── ncbi.py                # association gène ↔ citation PubMed
 │   └── proba_binom1.py        # prototype d'enrichissement binomial
-├── *.Rmd                      # TP UniProt / similarité — matériel de cours, voir note ci-dessous
-├── neo4j.import/              # CSV/TSV prêts à charger (nœuds & arêtes du graphe)
+├── csv/                       # CSV/TSV prêts à charger (nœuds & arêtes du graphe)
 ├── query/                     # sets de gènes d'exemple (set1-3, query6)
-├── ref.sets/                  # sets d'annotation de référence (JSON)
-├── downloads/                 # sources brutes (NCBI, EcoCyc, UniProt, GO, STRING)
-└── Results/                   # sorties d'enrichissement + tables Revigo
+├── Results/                   # sorties d'enrichissement + tables Revigo
+└── course-material/           # TP UniProt / similarité (hors pipeline)
 ```
 
 ### Index des résultats
@@ -139,40 +142,46 @@ Les fichiers sont nommés `res_<Type>_<set>.txt`. Chaque ligne est séparée par
 | `res_PubMed_*.txt`      | Littérature surreprésentée (PMIDs) |
 | `Revigo_BP/MF_*.tsv`    | Regroupement sémantique Revigo des termes GO (pour les graphiques) |
 
-> **Note sur les fichiers `.Rmd`** — `TP01/02/03_*.Rmd` sont des TP UniProt / similarité de
-> séquences issus du cours, conservés ici à titre de référence. Ils ne font pas partie du
-> pipeline d'enrichissement.
+> **Note sur `course-material/`** — `TP01/02/03_*.Rmd` sont des TP UniProt / similarité de
+> séquences issus du cours, conservés à titre de référence. Ils ne font pas partie du pipeline.
 
 ---
 
-## Prérequis
+## Démarrage rapide (Docker)
 
-- Python 3.9+
-- Une instance Neo4j active (bolt sur `localhost:7687`)
-- Paquets Python : `py2neo`, `scipy`
+Cloner, lancer Neo4j, construire le graphe, exécuter — quatre commandes :
 
 ```bash
+docker compose up -d                 # Neo4j sur http://localhost:7474
+./load_graph.sh                      # construit le graphe depuis csv/
 pip install -r requirements.txt
+python app.py -q query/set1.txt -t Pathway -c
 ```
 
-## Installation & exécution
+Identifiants locaux par défaut : `neo4j / testpassword` (voir `docker-compose.yml`).
+À remplacer pour tout usage partagé.
 
-**1. Charger le graphe.** Pointez le répertoire d'import de Neo4j vers `neo4j.import/` et chargez
-les nœuds et arêtes depuis les fichiers CSV/TSV fournis.
+## Installation manuelle (Neo4j existant)
 
-**2. Configurer la connexion.** Les identifiants sont lus depuis des variables d'environnement
-(ne jamais les coder en dur) :
+Pointez le répertoire d'import de Neo4j vers `csv/`, configurez la connexion, chargez le graphe :
 
 ```bash
 export NEO4J_URI="bolt://localhost:7687"
 export NEO4J_USER="neo4j"
 export NEO4J_PASSWORD="votre-mot-de-passe"
+
+NEO4J_IMPORT_DIR=/chemin/vers/neo4j/import ./load_graph.sh
+python app.py -q query/set1.txt -t GOTerm -c -v
 ```
 
-**3. Lancer une analyse :**
+Les identifiants sont lus depuis les variables d'environnement ci-dessus — rien n'est codé en dur.
+
+## Tests
+
+Les mesures statistiques sont dans `enrichment.py` et couvertes par des tests unitaires :
 
 ```bash
-python app.py -q query/set1.txt -t GOTerm -c -v
+python -m unittest discover -s tests
 ```
 
 ### Options

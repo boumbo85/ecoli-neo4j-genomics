@@ -1,0 +1,116 @@
+---
+title: "TP03_similarite"
+output: pdf_document
+date: "2023-10-13"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# IMPORT LIBRARY
+```{r}
+library(STRINGdb)
+# mise en forme des tableaux:
+library(kableExtra)
+```
+
+```{r}
+# IMPORT FONCTION
+kabex = function(o) o %>% kable(format="html", escape=F) %>% kable_styling(bootstrap_options = c("striped"))
+library(DT) 
+dted = function(o) o %>% datatable(rownames=F, filter="top", options=list(pageLength = 10), escape=F)
+```
+# BUT
+A partir des liens Keyword, Pathway, PubMed et GOTerm, il s’agit de générer des matrices pivots individus(bnumber)–variables(Keyword ou pahtways ou …) pour ensuite calculer la distance/similarité entre paires de gènes.
+
+# KEYWORD
+Ajout d’une colonne avec des 1 pour les association présentes dans les données de départ :
+
+```{r}
+keyword.mat = keywords %>% 
+  unique %>% 
+  mutate(asso=1)
+keyword.mat 
+```
+Génération d’une table pivot (les valeurs de la colonne keyword deviennent des colonnes) :
+```{r}
+keyword.tab = keyword.mat %>% 
+  pivot_wider(names_from = keyword, values_from = asso, values_fill = 0) %>% 
+  as.data.frame
+keyword.tab %>% head
+```
+Transfert des identifiants de gènes de la colonne bnumber aux noms de lignes (nécessaires pour qu’ils soient reportés sur les noms des lignes/colonnes) de la matrice de distance :
+
+```{r}
+rownames(keyword.tab) = keyword.tab$bnumber
+keyword.tab %>% head
+```
+
+## Calcul de la matrice de distance (entre paires de lignes/gènes) avec la méthode binary (cf. ?dist) :
+
+```{r}
+keyword.tab = keyword.tab %>% dplyr::select(-bnumber)
+keyword.dist = keyword.tab %>% dist(method='binary')
+keyword.dist[1:10]
+```
+
+Sous forme de scores à la StringDB
+```{r}
+keyword.scores = round( (1-keyword.dist) * 1000) %>% as.matrix
+keyword.scores[1:10,1:10]
+```
+Chargement sous forme de tibble :
+```{r}
+links.detailed = read_delim("../downloads/511145.protein.links.detailed.v12.0.txt.gz", delim=" ", col_types = "ccnnnnnnnn")
+links.detailed
+```
+C’est la colonne coexpression qui nous intéresse pour commencer.
+Génération des fichiers CSV pour l’import
+
+```{r}
+links.detailed %>%
+  filter(coexpression>0 & protein1 < protein2) %>%
+  select(protein1, protein2, coexpression) %>%
+  mutate(organism=str_extract(protein1, '^\\d+'), id1=str_extract(protein1, 'b\\d+'), id2=str_extract(protein2, 'b\\d+')) %>%
+  select(organism:id2,coexpression) %>%
+  write_csv("../neo4j.import/string.coexpression.csv")
+```
+
+Import dans neo4j
+```{r}
+'
+LOAD CSV WITH HEADERS FROM "file:///string.coexpression.csv" AS line
+MATCH (g1:Gene),(g2:Gene)
+ WHERE g1.id=line.id1 AND g2.id=line.id2
+WITH g1,g2, toInteger(line.coexpression) AS value 
+MERGE (g1)-[r:STRINGdb]-(g2)
+ SET r.coexpression=value
+'  %>% cypher
+```
+
+
+Vérification
+```{r}
+'MATCH ()-[r:STRINGdb]-() RETURN count(r)' %>% cypher %>% unlist #443946
+```
+Extraction des liens de coexpression d’au moins 0.4
+```{r}
+coex = "MATCH (g1:Gene)-[r:STRINGdb]-(g2:Gene) WHERE r.coexpression>=995 RETURN g1.id, g2.id, r.coexpression" %>% cypher 
+tibble(id1=coex$g1.id$value, id2=coex$g2.id$value, coexpression=coex$r.coexpression$value)
+```
+
+Extraction d’un sous-graphe : on utilise ici neo4J et la fonction fournie (call_neo4j) avec le paramètre type="graph" afin de récupérer un sous-graphe.
+```{r}
+g.coexpr = 'MATCH p = ()-[r:STRINGdb]-() WHERE r.coexpression>=995 RETURN p'  %>% cypher(type="graph")
+```
+
+Manipulation pour igraph pour récupérer les propriétés des sommets (https://github.com/neo4j-rstats/neo4r) à l’aide de la fonction unnest_nodes :
+
+```{r}
+g.coexpr$nodes = g.coexpr$nodes %>% unnest_nodes(what="properties")
+```
+
+```{r}
+g.coexpr$nodes %>% dted
+```
+

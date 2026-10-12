@@ -106,19 +106,22 @@ analysis recovers that biology straight from an anonymous list of identifiers.
 
 ```
 .
-├── app.py                     # main enrichment tool (Cypher + stats)
+├── app.py                     # main enrichment tool (CLI + Cypher queries)
+├── enrichment.py              # statistical measures (pure, unit-tested)
+├── load_graph.cypher          # builds the graph from csv/ (LOAD CSV)
+├── load_graph.sh              # copies CSVs + runs load_graph.cypher
+├── docker-compose.yml         # reproducible Neo4j instance
+├── tests/                     # unit tests for the enrichment measures
 ├── scripts/
 │   ├── GeneOntology.py        # OBO parser → GO nodes & is_a/part_of edges
 │   ├── gbff.to.bed.py         # genome annotation → BED (gene coordinates)
 │   ├── gbff.to.bnumber.GeneID.py  # bnumber ↔ NCBI GeneID mapping
 │   ├── ncbi.py                # gene ↔ PubMed citation mapping
 │   └── proba_binom1.py        # binomial enrichment prototype
-├── *.Rmd                      # UniProt / similarity practicals — course material, see note below
-├── neo4j.import/              # ready-to-load CSV/TSV (graph nodes & edges)
+├── csv/                       # ready-to-load CSV/TSV (graph nodes & edges)
 ├── query/                     # example gene sets (set1-3, query6)
-├── ref.sets/                  # reference annotation sets (JSON)
-├── downloads/                 # raw sources (NCBI, EcoCyc, UniProt, GO, STRING)
-└── Results/                   # enrichment outputs + Revigo tables
+├── Results/                   # enrichment outputs + Revigo tables
+└── course-material/           # UniProt / similarity practicals (not part of the pipeline)
 ```
 
 ### Results index
@@ -136,38 +139,46 @@ Files are named `res_<Type>_<set>.txt`. Each line is tab-separated:
 | `res_PubMed_*.txt`      | Over-represented literature (PMIDs) |
 | `Revigo_BP/MF_*.tsv`    | Revigo semantic clustering of GO terms (for plotting) |
 
-> **Note on the `.Rmd` files** — `TP01/02/03_*.Rmd` are UniProt / sequence-similarity practicals
-> from the course and are kept here only for reference. They are not part of the enrichment pipeline.
+> **Note on `course-material/`** — `TP01/02/03_*.Rmd` are UniProt / sequence-similarity
+> practicals from the course, kept for reference. They are not part of the enrichment pipeline.
 
 ---
 
-## Requirements
+## Quick start (Docker)
 
-- Python 3.9+
-- A running Neo4j instance (bolt on `localhost:7687`)
-- Python packages: `py2neo`, `scipy`
+Clone, start Neo4j, build the graph, run — four commands:
 
 ```bash
+docker compose up -d                 # Neo4j at http://localhost:7474
+./load_graph.sh                      # build the graph from csv/
 pip install -r requirements.txt
+python app.py -q query/set1.txt -t Pathway -c
 ```
 
-## Setup & run
+Default local credentials are `neo4j / testpassword` (see `docker-compose.yml`). Override
+them for anything shared.
 
-**1. Load the graph.** Point Neo4j's import directory at `neo4j.import/` and load the nodes
-and edges from the provided CSV/TSV files.
+## Manual setup (existing Neo4j)
 
-**2. Set the connection.** Credentials are read from environment variables (never hard-code them):
+Point your Neo4j import directory at `csv/`, set the connection, and load the graph:
 
 ```bash
 export NEO4J_URI="bolt://localhost:7687"
 export NEO4J_USER="neo4j"
 export NEO4J_PASSWORD="your-password"
+
+NEO4J_IMPORT_DIR=/path/to/neo4j/import ./load_graph.sh
+python app.py -q query/set1.txt -t GOTerm -c -v
 ```
 
-**3. Run an analysis:**
+Credentials are read from the environment variables above — nothing is hard-coded.
+
+## Tests
+
+The statistical measures live in `enrichment.py` and are covered by unit tests:
 
 ```bash
-python app.py -q query/set1.txt -t GOTerm -c -v
+python -m unittest discover -s tests
 ```
 
 ### Options
