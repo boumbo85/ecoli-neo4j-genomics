@@ -1,5 +1,7 @@
 # Analyse d'enrichissement fonctionnel d'E. coli sur un graphe Neo4j
 
+[![tests](https://github.com/boumbo85/ecoli-neo4j-genomics/actions/workflows/tests.yml/badge.svg)](https://github.com/boumbo85/ecoli-neo4j-genomics/actions/workflows/tests.yml)
+
 > 🇫🇷 Français · [🇬🇧 English version](./README.md)
 
 Donnez à cet outil une liste de gènes d'*E. coli*, et il vous dit ce qu'ils font ensemble —
@@ -87,6 +89,10 @@ python app.py -q query/set1.txt -t Pathway -c
 | PWY-8243   | 4.8e-83   | 11/11 | biosynthèse de l'acide colanique (E. coli K12) |
 | PWY-66     | 1.4e-10   | 2/2   | biosynthèse du GDP-L-fucose I |
 | COLANSYN-PWY | 1.3e-09 | 4/11  | briques de l'acide colanique |
+
+![Voies métaboliques enrichies pour le set de requête C](docs/figures/top_pathways.png)
+
+*Générée avec `python plot_enrichment.py <results.tsv> -o fig.png`.*
 
 **Les termes GO enrichis** pointent dans la même direction — processus de biosynthèse de
 l'acide colanique (GO:0046377, p = 3.3e-96, 17/23 gènes), plus un second groupe autour de la
@@ -194,12 +200,38 @@ python -m unittest discover -s tests
 | `-c, --adjust`  | Appliquer la correction FDR | off |
 | `-m, --measure` | `binomial` `hypergeometric` `chi2` `coverage` | `binomial` |
 | `-l, --limit`   | Nombre max de résultats | `0` (tous) |
+| `-o, --output`  | Écrire les résultats en TSV dans un fichier | stdout |
 | `-v, --verbose` | Afficher les requêtes et les sets | off |
+
+### Visualisation
+
+Transformez n'importe quel fichier de résultats en bar chart des top termes :
+
+```bash
+python app.py -q query/set1.txt -t Pathway -c -o pathways.tsv
+python plot_enrichment.py pathways.tsv -o fig.png -t "Voies enrichies"
+```
 
 ## Sources de données
 
 NCBI (`GCF_000005845.2`), EcoCyc, UniProt (protéome `UP000000625`),
 Gene Ontology (`go-basic.obo`), STRING v12.
+
+## Feuille de route / prochaines étapes
+
+Ce qui ferait passer ce projet d'un bon travail académique à une pièce de portfolio :
+
+- [ ] **CI de bout en bout** — lancer Neo4j comme service dans GitHub Actions et exécuter une vraie requête d'enrichissement, pour tester tout le pipeline, pas seulement les stats.
+- [ ] **Packager la CLI** — un `pyproject.toml` + point d'entrée (`ecoli-enrich ...`) au lieu d'appeler `app.py` directement.
+- [ ] **Tests multiples** — remplacer le FDR fait main par le Benjamini-Hochberg de `statsmodels` et reporter des q-values.
+- [ ] **Sortie interactive** — exporter les résultats en table HTML triable, et un nuage de points GO façon Revigo.
+- [ ] **Généraliser au-delà d'E. coli** — paramétrer l'organisme pour que le même schéma de graphe serve à n'importe quel génome annoté.
+
+> **Leçons retenues.** Trois réflexes que ce projet m'a appris, désormais appliqués dès le 1er commit :
+> les secrets et chemins locaux ne vont jamais dans un dépôt (variables d'environnement + `.gitignore`
+> dès le départ) ; tout projet reposant sur une base externe est livré avec son `docker-compose` pour
+> rester reproductible ; et les fonctions mathématiques ont des tests unitaires — c'est le signal de
+> qualité le moins cher et le plus convaincant.
 
 ## Autrice
 

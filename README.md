@@ -1,5 +1,7 @@
 # E. coli Functional Enrichment on a Neo4j Knowledge Graph
 
+[![tests](https://github.com/boumbo85/ecoli-neo4j-genomics/actions/workflows/tests.yml/badge.svg)](https://github.com/boumbo85/ecoli-neo4j-genomics/actions/workflows/tests.yml)
+
 > 🇬🇧 English · [🇫🇷 Version française](./README.fr.md)
 
 Give this tool a list of *E. coli* genes, and it tells you what they do together — which
@@ -85,6 +87,10 @@ python app.py -q query/set1.txt -t Pathway -c
 | PWY-8243   | 4.8e-83   | 11/11 | colanic acid (E. coli K12) biosynthesis |
 | PWY-66     | 1.4e-10   | 2/2   | GDP-L-fucose biosynthesis I |
 | COLANSYN-PWY | 1.3e-09 | 4/11  | colanic acid building blocks |
+
+![Top enriched pathways for query set C](docs/figures/top_pathways.png)
+
+*Generated with `python plot_enrichment.py <results.tsv> -o fig.png`.*
 
 **Top enriched GO terms** point the same way — colanic acid biosynthetic process
 (GO:0046377, p = 3.3e-96, 17/23 genes), plus a second cluster around **c-di-GMP signalling**
@@ -191,12 +197,37 @@ python -m unittest discover -s tests
 | `-c, --adjust`  | Apply FDR correction | off |
 | `-m, --measure` | `binomial` `hypergeometric` `chi2` `coverage` | `binomial` |
 | `-l, --limit`   | Max results reported | `0` (all) |
+| `-o, --output`  | Write results as TSV to a file | stdout |
 | `-v, --verbose` | Print queries and sets | off |
+
+### Plotting
+
+Turn any result file into a bar chart of the top terms:
+
+```bash
+python app.py -q query/set1.txt -t Pathway -c -o pathways.tsv
+python plot_enrichment.py pathways.tsv -o fig.png -t "Top enriched pathways"
+```
 
 ## Data sources
 
 NCBI (`GCF_000005845.2`), EcoCyc, UniProt (proteome `UP000000625`),
 Gene Ontology (`go-basic.obo`), STRING v12.
+
+## Roadmap / next steps
+
+Things that would push this from a solid academic project to a portfolio piece:
+
+- [ ] **End-to-end CI** — spin up Neo4j as a service in GitHub Actions and run one real enrichment query, so the whole pipeline is tested, not just the stats.
+- [ ] **Package the CLI** — a `pyproject.toml` + console entry point (`ecoli-enrich ...`) instead of calling `app.py` directly.
+- [ ] **Multiple-testing** — swap the hand-rolled FDR for `statsmodels` Benjamini-Hochberg and report q-values.
+- [ ] **Interactive output** — export results as a sortable HTML table, and a Revigo-style GO scatter.
+- [ ] **Generalise beyond E. coli** — parameterise the organism so the same graph schema works for any annotated genome.
+
+> **Lessons learned (worth stating).** Three habits this project taught me, now applied from commit 1:
+> secrets and local paths never go in a repo (env vars + `.gitignore` from the start); any project
+> touching an external database ships with its `docker-compose` so it stays reproducible; and
+> mathematical functions get unit tests — it is the cheapest, most convincing quality signal.
 
 ## Author
 
