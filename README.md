@@ -131,6 +131,18 @@ amino acid and chorismate superpathways — exactly the expected hierarchy, sinc
 derives from chorismate. The check runs without Neo4j (it reads the same `csv/` edge files) so
 it also runs in CI.
 
+**Negative control** (`negative_control.py`) — the symmetric check: random gene sets should
+*not* be enriched. Across 200 random sets of 113 genes, only **3%** return any significant
+pathway (0.05 terms/set on average), versus 11 for the study set. The method does not invent
+enrichment from noise.
+
+**Concordance with the reference tool** (`concordance.py`) — against the online tool
+(silico.biotoul.fr/enrichment) as a gold standard, our app **recovers 61% of its significant GO
+terms** (37/61), but reports many more overall (270), giving a Jaccard of 0.13. That gap is not
+disagreement on the biology: it measures our propagation of annotations up the GO hierarchy
+(true-path rule), which also surfaces general ancestor terms. A known, documented limitation —
+see the report.
+
 ## Co-expression cohesion (STRING)
 
 Enrichment tells you *which* functions a gene set is annotated for. A different, complementary
@@ -190,6 +202,8 @@ These are the questions a reviewer asks, answered up front.
 ├── coexpression.py            # STRING co-expression cohesion (pure, unit-tested)
 ├── coexpression_analysis.py   # permutation test on a gene set, no Neo4j needed
 ├── validate.py                # positive control (trp operon), no Neo4j needed
+├── negative_control.py        # negative control (random gene sets), no Neo4j needed
+├── concordance.py             # agreement with the reference tool (gold standard)
 ├── plot_enrichment.py         # bar chart of top enriched terms
 ├── load_graph.cypher          # builds the graph from csv/ (LOAD CSV)
 ├── load_graph.sh              # copies CSVs + runs load_graph.cypher

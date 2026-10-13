@@ -134,6 +134,18 @@ aminés aromatiques et du chorismate — exactement la hiérarchie attendue, pui
 dérive du chorismate. Le test tourne sans Neo4j (il lit les mêmes fichiers `csv/`), donc il
 s'exécute aussi en CI.
 
+**Contrôle négatif** (`negative_control.py`) — le test symétrique : des sets de gènes aléatoires
+ne devraient *rien* faire ressortir. Sur 200 sets aléatoires de 113 gènes, seuls **3%** sortent
+une voie significative (0,05 terme/set en moyenne), contre 11 pour le set d'étude. La méthode ne
+fabrique pas d'enrichissement à partir de bruit.
+
+**Concordance avec l'outil de référence** (`concordance.py`) — face à l'outil en ligne
+(silico.biotoul.fr/enrichment) pris comme étalon, notre application **retrouve 61% de ses termes
+GO significatifs** (37/61), mais en reporte beaucoup plus au total (270), soit un Jaccard de 0,13.
+Cet écart n'est pas un désaccord sur la biologie : il mesure notre propagation des annotations le
+long de la hiérarchie GO (règle du true-path), qui fait aussi remonter les termes ancêtres
+généraux. Limite connue et documentée — voir le rapport.
+
 ## Cohésion de coexpression (STRING)
 
 L'enrichissement dit *pour quelles* fonctions un set de gènes est annoté. Une question
@@ -194,6 +206,8 @@ Les questions qu'un jury pose, répondues d'emblée.
 ├── coexpression.py            # cohésion de coexpression STRING (fonctions pures, testées)
 ├── coexpression_analysis.py   # test de permutation sur un set de gènes, sans Neo4j
 ├── validate.py                # contrôle positif (opéron trp), sans Neo4j
+├── negative_control.py        # contrôle négatif (sets aléatoires), sans Neo4j
+├── concordance.py             # accord avec l'outil de référence (gold standard)
 ├── plot_enrichment.py         # bar chart des top termes enrichis
 ├── load_graph.cypher          # construit le graphe depuis csv/ (LOAD CSV)
 ├── load_graph.sh              # copie les CSV + exécute load_graph.cypher

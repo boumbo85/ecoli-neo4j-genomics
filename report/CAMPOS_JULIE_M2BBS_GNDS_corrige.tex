@@ -678,7 +678,7 @@ La liste des termes de l'ontologie des gènes ("GOterm", base OBO) nous permet d
 \item renforcement de l'adhésion (création de firum)
 \item protection des protéines (via chaperonnes, transformation du repliement de protéines)
 \end{itemize}
-Il semblerait que la cellule bactérienne se prépare à affronter le stress en mettant en place une stratégie de défense plutôt que de fuite : perte de mobilité, changement de la structure de la membranne externe, renforcement du biofilm (bloc avec les bactéries voisines), création de fibrum qui renforce le phénomène d'adhésion (aux cellules eucaryotes de la paroi intestinal par exemple?) protection des protéines.
+D'après les données et les tests, il semblerait que la cellule bactérienne se prépare à affronter le stress en mettant en place une stratégie de défense plutôt que de fuite : perte de mobilité, changement de la structure de la membranne externe, renforcement du biofilm (bloc avec les bactéries voisines), création de fibrum qui renforce le phénomène d'adhésion (aux cellules eucaryotes de la paroi intestinal par exemple?) protection des protéines. Ces interprétations restent des hypothèses, à valider expérimentalement.
  (\textit{cf.~figure~\ref{fig:revigo1}})
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -686,6 +686,10 @@ Il semblerait que la cellule bactérienne se prépare à affronter le stress en 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \textbf{Contrôle positif.} Pour vérifier que la méthode retrouve bien une biologie connue, nous l'appliquons à un cas d'école : l'opéron \textit{trp} (\textit{trpA--E}, b1260--b1264), cinq gènes qui synthétisent le L-tryptophane. L'outil retourne en tête la voie \texttt{TRPSYN-PWY} (\textit{L-tryptophan biosynthesis}, p = $2{,}1\times10^{-15}$, 5/5 gènes), suivie des superpathways des acides aminés aromatiques et du chorismate --- exactement la hiérarchie attendue, puisque le tryptophane dérive du chorismate. L'outil ne fait pas que « tourner », il \textbf{retrouve la bonne réponse} sur un cas de référence.
+
+\textbf{Contrôle négatif.} Symétriquement, un ensemble de gènes \textit{tirés au hasard} ne devrait rien faire ressortir de significatif. Sur 200 tirages aléatoires de 113 gènes (même taille que le set d'étude), seuls 3\% produisent au moins une voie significative, soit en moyenne 0,05 terme par tirage --- à comparer aux 11 voies significatives du set 6. L'outil ne fabrique donc pas d'enrichissement à partir de bruit : le taux de faux positifs reste maîtrisé.
+
+\textbf{Concordance avec un outil de référence.} Nous chiffrons l'accord avec l'application en ligne (silico.biotoul.fr/enrichment), prise comme étalon. Sur les termes GO du set 6, notre application retrouve \textbf{61\% des termes significatifs de l'étalon} (37 termes communs sur 61), mais en reporte beaucoup plus au total (270), ce qui donne un indice de Jaccard de 0,13. Cet écart ne traduit pas un désaccord sur la biologie mais notre \textbf{propagation des annotations le long de la hiérarchie GO} (règle du \textit{true-path} avec chemin de longueur variable) : les termes ancêtres, plus généraux, remontent aussi. C'est une limite méthodologique assumée (cf. section~\ref{sec:limites}), et non une erreur sur les fonctions identifiées.
 
 \textbf{Exploitation des données STRING.} L'enrichissement indique \textit{pour quelles} fonctions un ensemble de gènes est annoté. Une question complémentaire, indépendante : ces gènes forment-ils réellement un \textbf{module} --- sont-ils plus coexprimés entre eux qu'un ensemble aléatoire de même taille ? Nous répondons par un test de permutation (2000 tirages) sur les arêtes de coexpression STRING, jusqu'ici seulement stockées dans la base.
 
@@ -703,7 +707,17 @@ Opéron \textit{trp} (contrôle) & 5 & 9\,934 & $\mathbf{252\times}$ & $\leq 5\t
 \label{tab:coexpr}
 \end{table}
 
-\textbf{Deux angles convergents.} Nous disposons désormais de deux analyses \textit{indépendantes} qui pointent vers la même conclusion : (1) l'\textbf{enrichissement} (annotations) montre que ces gènes codent la biosynthèse de l'acide colanique et le programme biofilm ; (2) la \textbf{coexpression} (STRING) montre qu'ils forment un module réel ($13{,}2\times$ au-dessus du hasard), et non une liste arbitraire. La convergence de deux méthodes indépendantes renforce la confiance dans l'interprétation : le set 6 est un module fonctionnel cohérent impliqué dans la réponse au stress et la formation du biofilm.
+\textbf{Deux angles convergents.} Nous disposons désormais de deux analyses \textit{indépendantes} qui pointent vers la même conclusion : (1) l'\textbf{enrichissement} (annotations) montre que ces gènes codent la biosynthèse de l'acide colanique et le programme biofilm ; (2) la \textbf{coexpression} (STRING) montre qu'ils forment un module réel ($13{,}2\times$ au-dessus du hasard), et non une liste arbitraire. La convergence de deux méthodes indépendantes renforce la confiance dans l'interprétation : d'après les données et les tests, le set 6 \textit{semblerait} être un module fonctionnel cohérent impliqué dans la réponse au stress et la formation du biofilm. Cette hypothèse resterait à confirmer expérimentalement.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{[v2] LIMITES MÉTHODOLOGIQUES}
+\label{sec:limites}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{itemize}
+\item \textbf{Propagation GO (règle du \textit{true-path}).} Nous récupérons les GOTerm associés aux gènes \textit{ainsi que leurs ancêtres} (chemin \texttt{is\_a|part\_of|annotates*} de longueur variable). Les termes généraux (ex. \textit{metabolic process}) héritent donc de tous leurs descendants et ressortent quasi systématiquement : leurs p-valeurs ne sont pas directement interprétables. La concordance mesurée (61\% de recouvrement, Jaccard 0,13) quantifie ce phénomène. Une correction propre consisterait à tester chaque terme avec son ensemble de gènes réellement propagé et à ne pas confondre « enrichi » et « général » (approches conditionnelles de type \textit{elim}/\textit{weight}, cf. \texttt{topGO}).
+\item \textbf{Non-indépendance des tests.} La correction de Benjamini-Hochberg suppose des tests approximativement indépendants. Or les termes GO sont emboîtés (parent/enfant) donc fortement corrélés : un terme et son parent ne constituent pas deux preuves indépendantes. Les q-valeurs rapportées doivent donc être lues comme des \textbf{bornes basses} (optimistes).
+\item \textbf{Population de référence (« background »).} L'enrichissement est testé contre le génome entier (4315 gènes). Si l'ensemble requête provenait d'une expérience ne couvrant qu'une partie des gènes (puce, RNA-seq), le background correct serait la liste des gènes mesurés, pas la totalité du génome (cf. perspective en section Amélioration).
+\end{itemize}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -719,7 +733,7 @@ Opéron \textit{trp} (contrôle) & 5 & 9\,934 & $\mathbf{252\times}$ & $\leq 5\t
 \clearpage
 \newpage
 \section{BIOLOGIQUE}
-L'ensemble de gènes inconnus 6 semble codées pour des protéines impliquée dans la réponse à un stress thermique. Ils sont impliqués depuis la réception du signal (de stress) à la cascade de réaction biochimique et cellulaire qui en découle. 
+D'après les résultats d'enrichissement et de coexpression, l'ensemble de gènes 6 semblerait coder pour des protéines impliquées dans la réponse à un stress thermique, depuis la réception du signal (de stress) jusqu'à la cascade de réactions biochimiques et cellulaires qui en découle. Cette caractérisation est une hypothèse issue des données, qui resterait à confirmer expérimentalement. 
 
 Cette approche bio-informatique, via la récolte des informations importantes pour un projet, leur organisation en BD sous forme de graphe (Avec Neo4j par exemple), et leur interrogation automatique via un programme (\textcolor{violet}{python}) est une formidable puissance pour analyser et caractériser une liste de gènes inconnus. Grâce à cette méthode, nous pouvons trouvé extrêmement facilement les fonctions biologiques et les publications associées. Par exemple, le travail de recherche de publication peut être très long et fastidieux. Cette méthode, permet vraiment de regrouper en un seul endroit, toutes informations relatives à un projet. \\ 
 L'enjeu est de bien extraire les informations pertinentes (par exemple, il peut y avoir beaucoup de publication mentionnant chaque gène impliqué). Il s'agit d'une problématique classique dans bien des domaines, comment extraire le signal du bruit.
@@ -763,6 +777,13 @@ Il est recommandé de tester plusieurs mesures de similarité et de choisir cell
 
 
 J'aurai peut être vu un test d'adéquation du  $\chi^2$ pour suivre la logique des 2 tests que nous avons réalisé ('binomial' et 'hypergeometric'). De plus, peut être que nous pourrions tester une autre stratégie pour ajuster les p-valeurs si multi-test (FDR).
+
+\paragraph{[v2] En synthèse --- deux priorités.} Parmi les pistes ci-dessus, deux me paraissent prioritaires car elles corrigent des limites réelles de l'analyse (cf. section~\ref{sec:limites}), plutôt que d'ajouter des mesures pour le plaisir :
+\begin{enumerate}
+\item \textbf{Un test GO conditionnel} (type \textit{elim}/\textit{weight}, cf. \texttt{topGO}) pour traiter la non-indépendance des termes emboîtés et éviter que les termes généraux ne dominent --- c'est la correction directe du biais \textit{true-path} mesuré par la concordance.
+\item \textbf{Un background paramétrable} pour que l'enrichissement reste valide quand l'ensemble requête provient d'une expérience à couverture partielle (puce, RNA-seq).
+\end{enumerate}
+Les autres mesures (Jaccard, Hamming, Dice, McNemar, Kruskal-Wallis) relèvent d'une approche par matrices de similarité, intéressante mais distincte de l'approche par enrichissement retenue ici.
 
 \section{BILAN PERSONNEL}
 J'ai vraiment adoré ce projet, notamment les aspects suivant :
