@@ -1,187 +1,163 @@
-#!/bin/env python
-# conda install python3 biopython requests
-# ./gbff.to.bnumber.GeneID.py > mapping.bnumber_ncbi.tsv
+#!/usr/bin/env python
+"""Search enriched terms/categories in a provided gene set.
 
-# UPLOAD PACKAGES
-from py2neo import * # conda install py2neo, monotonic
-from py2neo.matching import *
+Queries a Neo4j knowledge graph of E. coli K-12 MG1655 and reports which
+annotation categories (GO terms, pathways, transcription units, protein
+families, keywords, literature) are over-represented in the query gene set.
+
+Credentials are read from environment variables:
+    export NEO4J_URI="bolt://localhost:7687"
+    export NEO4J_USER="neo4j"
+    export NEO4J_PASSWORD="your-password"
+"""
+
 import argparse
-from pprint import pprint
+import csv
+import os
+import sys
 from os.path import isfile
-import json
-from scipy.stats import binom, hypergeom, chi2_contingency  # pip install scipy
+
+from py2neo import Graph
+from py2neo.matching import NodeMatcher
+
+import enrichment
 
 
-# CONNECTION TO NEO4J
-neo = Graph("bolt://localhost:7687",
-            auth=("neo4j","omybioinfo"))
-nodes = NodeMatcher(neo)
- 
-
-# SCRIPT PARAMETERS #######################################################
-parser = argparse.ArgumentParser(description='Search enriched terms/categories in the provided (gene) set')
-parser.add_argument('-q', '--query', required=True, help='Query set (gene nodes in Neo4j).')
-parser.add_argument('-t', '--type', required=True, choices=['Keyword', 'Pathway','TU','GOTerm','InterPro','PubMed'], help='Type of target sets: keyword, pathway,TU,GOterm,Interpro,pubmed')
-parser.add_argument('-a', '--alpha', required=False, type=float, default=0.05, help='Significance threshold.')
-parser.add_argument('-c', '--adjust', required=False, action="store_true", help='Adjust for multiple testing (FDR).')
-parser.add_argument('-m', '--measure', required=False, default='binomial', help='Dissimilarity index: binomial (default), hypergeometric, chi2 or coverage')
-parser.add_argument('-l', '--limit', required=False, type=int, default=0, help='Maximum number of results to report.')
-parser.add_argument('-v', '--verbose', required=False, action="store_true", help='Talk a lot.')
-param = parser.parse_args()
+# ── Cypher templates per target type ──────────────────────────────────────
+# Each entry describes how to reach a target node from a Gene, and whether the
+# target carries a human-readable description. Parameters ($genes, $set_id) are
+# passed to Neo4j rather than interpolated into the query string.
+TARGETS = {
+    "Keyword":  {"rel": "-->",                        "desc": False},
+    "GOTerm":   {"rel": "-[:is_a|part_of|annotates*]->", "desc": True},
+    "TU":       {"rel": "-[:harbors]->",              "desc": True},
+    "Pathway":  {"rel": "-[:requires]->",             "desc": True},
+    "InterPro": {"rel": "-[:encoded_in]->",           "desc": False},
+    "PubMed":   {"rel": "-[:cites]->",                "desc": False},
+}
 
 
-# Path Query
-path = '../query/query6.txt'
+def connect():
+    return Graph(
+        os.environ.get("NEO4J_URI", "bolt://localhost:7687"),
+        auth=(
+            os.environ.get("NEO4J_USER", "neo4j"),
+            os.environ.get("NEO4J_PASSWORD", "neo4j"),
+        ),
+    )
 
 
-# LOAD QUERY #######################################################################
-text = param.query
-query = set()
-if isfile(text):
-    with open(text) as f:
-        content = ' '.join(f.read().split('\n')).split()
-        query |= set(content)
-else: # parse string
-    query |= set(text.split())
-
-if param.verbose:
-  print(f'query set: {query}')
-
-# LOAD TARGET/REFERENCE SETS #######################################################
-population = nodes.match("Gene")
-pprint(population)
-
-# POPULATION SIZE = total number of genes in the database
-n_gene_total = population.count() # len(population)
-pprint(f"population size: {n_gene_total}")
-
-# QUERY SIZE = number of genes in the query
-query_size = len(query)
-pprint(f"Number of genes in the query: {query_size}")
-
-# EXTRACT query genes from the database:
-
-target = param.type
-if target == 'Keyword': # if we want to search for keywords
-    cypher = f"MATCH (k:{target})-->(g:Gene) WHERE g.id IN {list(query)} RETURN DISTINCT k"
-    res = neo.run(cypher)#.to_table()
-
-elif target == 'GOTerm': # EXTRACT GO TERMS FROM query genes from the database:
-    cypher = f"MATCH (k:{target})-[:is_a|part_of|annotates*]->(g:Gene) WHERE g.id IN {list(query)} RETURN DISTINCT k.id, k.desc" #:is_a|part_of|annotates a la place on peut mettre *
-    res = neo.run(cypher).to_table()
-
-elif target == 'TU': # EXTRACT TU FROM query genes from the database:
-    cypher = f"MATCH (k:{target})-[:harbors]->(g:Gene) WHERE g.id IN {list(query)} RETURN DISTINCT k.id, k.desc" 
-    res = neo.run(cypher).to_table()
-
-elif target == 'Pathway': # EXTRACT PATHWAY FROM query genes from the database:
-    cypher = f"MATCH (k:{target})-[:requires]->(g:Gene) WHERE g.id IN {list(query)} RETURN DISTINCT k.id, k.desc" 
-    res = neo.run(cypher).to_table()
-
-elif target == 'InterPro': # EXTRACT Interpro FROM query genes from the database:
-    cypher = f"MATCH (k:{target})-[:encoded_in]->(g:Gene) WHERE g.id IN {list(query)} RETURN DISTINCT k.id" 
-    res = neo.run(cypher).to_table()
-
-elif target == 'PubMed': # EXTRACT PubMed FROM query genes from the database:
-    cypher = f"MATCH (k:{target})-[:cites]->(g:Gene) WHERE g.id IN {list(query)} RETURN DISTINCT k.id" 
-    res = neo.run(cypher).to_table()
-
-if param.verbose:
-    pprint(f'Cyper request: {cypher}')
-    pprint(f'target set: {res}')
+def load_query(text):
+    """Load a gene set from a file (whitespace/newline separated) or a string."""
+    genes = set()
+    if isfile(text):
+        with open(text) as f:
+            genes |= set(f.read().split())
+    else:
+        genes |= set(text.split())
+    return genes
 
 
-#  STATISTICAL TESTS #######################################################################
-results = [] 
-liste_proba = [] # list of dictionaries to store results (probabilities)
-dico_proba = {}
-desc = []
-for r in res:
-    # EXTRACT GENES ASSOCIATED (bnumber) WITH CYPHER REQUESTS
-    if target == 'Keyword':
-        set_id = r['k']['id']
-        cypher2 = f"MATCH (t:{target})-->(g:Gene) WHERE t.id = '{set_id}' RETURN DISTINCT g.id" 
-    elif target == 'GOTerm':   
-        set_id = r[0] 
-        desc = r[1]
-        cypher2 = f"MATCH (t:{target})-[:is_a|part_of|annotates*]->(g:Gene) WHERE t.id = '{set_id}' RETURN DISTINCT g.id"
-    elif target == 'TU':   
-        set_id = r[0] 
-        desc = r[1]
-        cypher2 = f"MATCH (t:{target})-[:harbors]->(g:Gene) WHERE t.id = '{set_id}' RETURN DISTINCT g.id"
-    elif target == 'Pathway':   
-        set_id = r[0] 
-        desc = r[1]
-        cypher2 = f"MATCH (t:{target})-[:requires]->(g:Gene) WHERE t.id = '{set_id}' RETURN DISTINCT g.id"    
-    elif target == 'InterPro':   
-        set_id = r[0] 
-        cypher2 = f"MATCH (t:{target})-[:encoded_in]->(g:Gene) WHERE t.id = '{set_id}' RETURN DISTINCT g.id"    
-    elif target == 'PubMed':   
-        set_id = r[0] 
-        cypher2 = f"MATCH (t:{target})-[:cites]->(g:Gene) WHERE t.id = '{set_id}' RETURN DISTINCT g.id"    
-    
-    # EXECUTE CYPHER REQUESTS ACCORDING TO THE TARGET TYPE
-    result2 = neo.run(cypher2)
-    
-    # EXTRACT UNIQUE GENES ASSOCIATED WITH CYPHER REQUESTS
-    elements = set(i[0] for i in result2.to_table()) 
-    common_elements = elements.intersection(query)  # common elements between query and target
-    k = len(common_elements) # c/k:number of successes in the population = common between query and elements
-    t = len(elements)
-    p = len(elements)/n_gene_total # proba of success each essay
-
-    # COVERAGE ####################################################
-    if param.measure == 'coverage':
-        proba = 1 - (k/query_size) * (k/t)
-
-    # BINOMIAL TEST ####################################################
-    if param.measure == 'binomial': # by default binom.cdf(<=success, attempts, proba). we need calculate p(X>=x)
-        # based on success
-        # proba = 1 - binom.cdf(len(common_elements)-1, query_size, p) #query_size - len(common_elements)
-        # based on failure : best
-        proba = binom.cdf(query_size - k, query_size, 1 - p)
-
-    # HYPERGEOMETRIC TEST ##################################################
-    if param.measure == 'hypergeometric':
-        proba = 1 - hypergeom.cdf(k - 1, n_gene_total, t, query_size)
-        # x = k, M = n_gene_total, t = len(elements), n = query_size pdf = hypergeom.pmf(x, M, n, N)
-        # k success parmi n du query/target, N = population size, t = number of target in the population, N = number of query
-
-    # CHI2 ########################################################
-    if param.measure == 'chi2': # adjusted chi square cdf(x, df, loc=0, scale=1)
-        # Creation of the contingency table as observed = [[c, q - c], [t - c, g - q - t + c]]
-        observed = [[k, query_size - k], [ t - k, n_gene_total - ( t + query_size - k)]]
-        # chi2_contingency test
-        chi2_stat, proba, _, _ = chi2_contingency(observed)
+def candidate_terms(neo, target, genes):
+    """Return [(id, desc)] of target nodes linked to any gene in the query."""
+    spec = TARGETS[target]
+    ret = "k.id, k.desc" if spec["desc"] else "k.id, NULL"
+    cypher = (
+        f"MATCH (k:{target}){spec['rel']}(g:Gene) "
+        f"WHERE g.id IN $genes RETURN DISTINCT {ret}"
+    )
+    return [(row[0], row[1]) for row in neo.run(cypher, genes=list(genes))]
 
 
-    # if proba <= param.alpha:
-    dico_proba = {
-                  "id": set_id, 
-                  "p-value": proba,
-                  'common.n':len(common_elements), 
-                  'target.n': len(elements),
-                  'elements.target': elements, 
-                  'elements.common': common_elements,
-                  'desc': desc
-                }      
-    liste_proba.append(dico_proba)
-    
-liste_triee = sorted(liste_proba, key=lambda x: x["p-value"])
+def genes_of_term(neo, target, set_id):
+    """Return the set of gene ids associated with a given target node."""
+    spec = TARGETS[target]
+    cypher = (
+        f"MATCH (t:{target}){spec['rel']}(g:Gene) "
+        f"WHERE t.id = $set_id RETURN DISTINCT g.id"
+    )
+    return {row[0] for row in neo.run(cypher, set_id=set_id)}
 
-if param.adjust:
-    liste_ajust = []
-    
-    for i, r in enumerate(liste_triee):
-        p_val_ajust = (r["p-value"] * query_size) / (i + 1) 
-        if p_val_ajust <= param.alpha:
-            liste_ajust.append(r)
-            
-    pprint(f'Number of significative adjusted p-value(0.05): {len(liste_ajust)}')
-    for r in liste_ajust:
-        print("{}\t{}\t{}/{}\t{}\t{}".format(r['id'], r['p-value'], r['common.n'], r['target.n'], r['desc'], ', '.join(r['elements.common'])))
 
-else:
-    pprint(f'Number of significative adjusted p-value(0.05): {len(liste_triee)}')
-    for r in liste_triee:
-        print("{}\t{}\t{}/{}\t{}\t{}".format(r['id'], r['p-value'], r['common.n'], r['target.n'], r['desc'], ', '.join(r['elements.common'])))
+def main():
+    parser = argparse.ArgumentParser(
+        description="Search enriched terms/categories in the provided (gene) set"
+    )
+    parser.add_argument("-q", "--query", required=True,
+                        help="Query set: a file of gene ids, or a quoted string.")
+    parser.add_argument("-t", "--type", required=True, choices=list(TARGETS),
+                        help="Type of target sets.")
+    parser.add_argument("-a", "--alpha", type=float, default=0.05,
+                        help="Significance threshold.")
+    parser.add_argument("-c", "--adjust", action="store_true",
+                        help="Adjust for multiple testing (FDR).")
+    parser.add_argument("-m", "--measure", default="binomial",
+                        choices=enrichment.MEASURES,
+                        help="Enrichment measure (default: binomial).")
+    parser.add_argument("-l", "--limit", type=int, default=0,
+                        help="Maximum number of results to report (0 = all).")
+    parser.add_argument("-o", "--output",
+                        help="Write results as TSV to this file (default: stdout).")
+    parser.add_argument("-v", "--verbose", action="store_true",
+                        help="Talk a lot.")
+    param = parser.parse_args()
+
+    neo = connect()
+    nodes = NodeMatcher(neo)
+
+    query = load_query(param.query)
+    query_size = len(query)
+    N = nodes.match("Gene").count()
+
+    if param.verbose:
+        print(f"query set ({query_size} genes): {sorted(query)}", file=sys.stderr)
+        print(f"population size: {N}", file=sys.stderr)
+
+    # Score every candidate term
+    results = []
+    for set_id, desc in candidate_terms(neo, param.type, query):
+        elements = genes_of_term(neo, param.type, set_id)
+        common = elements & query
+        k, t = len(common), len(elements)
+        pvalue = enrichment.score(param.measure, k, t, query_size, N)
+        results.append({
+            "id": set_id,
+            "p-value": pvalue,
+            "common.n": k,
+            "target.n": t,
+            "desc": desc if desc is not None else "",
+            "elements.common": sorted(common),
+        })
+
+    results.sort(key=lambda x: x["p-value"])
+
+    if param.adjust:
+        results = enrichment.fdr_filter(results, param.alpha)
+
+    if param.limit and param.limit > 0:
+        results = results[: param.limit]
+
+    if param.verbose:
+        print(f"reporting {len(results)} term(s)", file=sys.stderr)
+
+    # Output ───────────────────────────────────────────────────────────────
+    out = open(param.output, "w", newline="") if param.output else sys.stdout
+    try:
+        writer = csv.writer(out, delimiter="\t")
+        header = ["id", "p-value", "common", "target", "description", "genes"]
+        if param.adjust:
+            header.insert(2, "q-value")  # BH-adjusted
+        writer.writerow(header)
+        for r in results:
+            row = [r["id"], r["p-value"], r["common.n"], r["target.n"],
+                   r["desc"], ", ".join(r["elements.common"])]
+            if param.adjust:
+                row.insert(2, r.get("q-value", ""))
+            writer.writerow(row)
+    finally:
+        if param.output:
+            out.close()
+
+
+if __name__ == "__main__":
+    main()

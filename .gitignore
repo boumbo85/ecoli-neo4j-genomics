@@ -1,0 +1,32 @@
+# Neo4j database files (regenerated on load)
+neo4j.data/
+*.db
+
+# Singularity / container images
+*.sif
+
+# Large raw downloads (fetch from source, see README)
+downloads/*.gz
+downloads/*.zip
+*.obo
+
+# R / RStudio
+.Rhistory
+.RData
+.Rproj.user/
+
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+*.egg-info/
+.venv/
+.venv_test/
+env/
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

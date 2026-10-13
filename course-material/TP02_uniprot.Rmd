@@ -1,0 +1,447 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+# charge library
+if (!require('neo4r')) { # client neo4j 
+  install.packages('neo4r')
+}
+
+```{r}
+library(neo4r)
+neodb = neo4j_api$new(
+  url = "http://localhost:7474", 
+  user = "neo4j", 
+  password = "omybioinfo"
+)
+cypher = function(query, neo4j=neodb, ...) call_neo4j(query=query, con=neo4j, ...)
+```
+
+# 1.3.2.1 Nettoyage
+avant de creer la bd
+surtout pas apres...
+
+```{r}
+'MATCH ()-[r]-() DELETE(r)' %>% cypher
+'MATCH ()-[r]-() RETURN count(r)' %>% cypher %>% unlist
+# attention supprime tout
+'MATCH (n) DELETE(n)' %>% cypher
+'MATCH (n) RETURN count(n)' %>% cypher %>% unlist
+```
+# Genes 1.1.1.1 Choix des identifiants de référence, import genes
+extraire position des gene sur ecoli
+
+```{r}
+library(tidyverse)
+library(jsonlite) 
+```
+
+
+## 1ere chose a faire cest crere les noeuds
+```{r}
+ncbi <- read_tsv("../data/mapping.bed.tsv", show_col_types = F)
+ncbi %>% head
+```
+```{r}
+names(ncbi)
+```
+
+Nombre de lignes attendu : 4403
+```{r}
+dim(ncbi) # 4315 ok
+length(unique(ncbi$bnumber))
+```
+## Load CSV GENOME DE REF E.COLI (GENES)
+```{r}
+# IMPORT
+
+"LOAD CSV WITH HEADERS FROM 'file:///mapping.bed.tsv' AS row FIELDTERMINATOR '\t' 
+CREATE (n:Gene)
+SET n = row,
+ n.id = row.bnumber,
+ n.organism = toInteger('511145'),
+ n.rank = toInteger(row.rank),
+ n.strand = row.strand,
+ n.begin = toInteger(row.begin),
+ n.end = toInteger(row.end)
+ " %>% cypher
+```
+## verif
+```{r}
+'MATCH (n:Gene) RETURN count(n)' %>% cypher %>% unlist #4315
+```
+## VISU
+```{r}
+"MATCH (n:Gene) RETURN n LIMIT 6" %>% cypher %>% .$n
+```
+
+## Index sinon l’ajout de liens et les requêtes peuvent être très longs
+```{r}
+'CREATE INDEX ON :Gene(id)' %>% cypher
+```
+# 1.3.2.2.2 Keywords et liens Keyword → Gene (uniprot)
+## CHARGE NOEUD KEYWORDS
+```{r}
+# CHECK
+keywords %>% select(keyword) %>% unique 
+```
+
+```{r}
+# Load CSV
+keywords %>% 
+  select(keyword) %>%
+  unique %>%
+  write_csv("../neo4j.import/uniprot.keywords.csv")
+
+'LOAD CSV WITH HEADERS FROM "file:///uniprot.keywords.csv" AS row 
+CREATE (n:Keyword)
+SET n = row,
+ n.id = row.keyword
+'  %>% cypher
+
+'CREATE INDEX ON :Keyword(id)' %>% cypher
+```
+VERIF
+```{r}
+'MATCH (n:Keyword) RETURN count(n)' %>% cypher %>% unlist #385
+```
+## Liens Keyword → Gene
+```{r}
+keywords %>% write_csv("../neo4j.import/uniprot.keywords.genes.csv")
+```
+
+```{r}
+"MATCH (:Keyword)-[r:describes]->(:Gene) DELETE r" %>% cypher
+"
+LOAD CSV WITH HEADERS FROM 'file:///uniprot.keywords.genes.csv' AS line 
+MATCH (k:Keyword),(g:Gene) 
+WHERE k.id=line.keyword AND g.id=line.bnumber
+WITH k,g 
+MERGE (k)-[:describes]->(g)
+" %>% cypher
+```
+VERIF
+```{r}
+"MATCH (:Keyword)-[r:describes]->(:Gene) RETURN count(r)" %>% cypher %>% unlist #27323
+```
+
+
+# 1.3.2.2.3 PubMed
+## Create files
+./scripts/gbff.to.bnumber.GeneID.py downloads/GCF_000005845.2.gbff.gz > generated.data/mapping.bnumber_ncbi.tsv
+```{r}
+pmids = read_tsv("../data/bnumber.PMID.tsv", col_types = "cc")
+pmids %>% select(PMID) %>% unique %>% write_csv("../neo4j.import/ncbi.pmid.csv")
+pmids %>% rename(gene_id = bnumber) %>% write_csv("../neo4j.import/ncbi.pmid.genes.csv")
+```
+
+## Export dans Noe4j
+```{r}
+# LOAD dans neo4j
+"MATCH (:PubMed)-[r:cites]->(:Gene) DELETE r" %>% cypher
+'MATCH (n:PubMed) DELETE n' %>% cypher
+'LOAD CSV WITH HEADERS FROM "file:///ncbi.pmid.csv" AS row 
+CREATE (n:PubMed)
+SET n = row,
+ n.id = row.PMID
+'  %>% cypher
+
+'CREATE INDEX ON :PubMed(id)' %>% cypher
+```
+Vérification
+```{r}
+'MATCH (n:PubMed) RETURN count(n)' %>% cypher %>% unlist #35320
+```
+## Import du fichier CSV LIEN ARETE
+```{r}
+"MATCH (:PubMed)-[r:cites]->(:Gene) DELETE r" %>% cypher
+"
+LOAD CSV WITH HEADERS FROM 'file:///ncbi.pmid.genes.csv' AS line 
+MATCH (p:PubMed),(g:Gene) 
+WHERE p.id=line.PMID AND g.id=line.gene_id
+WITH p,g 
+MERGE (p)-[:cites]->(g)
+" %>% cypher
+```
+Vérification
+```{r}
+"MATCH (:PubMed)-[r:cites]->(:Gene) RETURN count(r)" %>% cypher %>% unlist #101841 
+```
+Complétez cette partie afin de charger dans la base de données :
+
+    Les domaines InterPro -> Ok
+    les pathways,
+    les unités de transcription (TUs),
+
+## interpro
+### Load CSV NODES
+```{r}
+interpro %>% 
+  select(keyword) %>%
+  unique %>%
+  write_csv("../neo4j.import/uniprot.interpro.csv")
+
+# Check clean the bd
+"MATCH (:InterPro)-[r]-() DELETE r" %>% cypher
+"MATCH (n:InterPro) DELETE n" %>% cypher
+
+#nom de la BD
+'LOAD CSV WITH HEADERS FROM "file:///uniprot.interpro.csv" AS row 
+CREATE (n:InterPro) 
+SET n = row,
+ n.id = row.keyword
+'  %>% cypher
+# 6,760
+```
+verif
+```{r}
+'MATCH (n:InterPro) RETURN count(n)' %>% cypher %>% unlist #6760 expected 6679
+```
+
+
+VERIF
+```{r}
+"MATCH (n:InterPro) RETURN n LIMIT 6" %>% cypher %>% .$n
+```
+INDEX
+```{r}
+'CREATE INDEX ON :InterPro' %>% cypher
+```
+
+### RECUP lien arete
+```{r}
+interpro %>% write_csv("../neo4j.import/uniprot.interpro.genes.csv")
+```
+
+```{r}
+#LOAD DATA ON NEO4J
+"MATCH (:InterPro)-[r:encoded_in]->(:Gene) DELETE r" %>% cypher
+"
+LOAD CSV WITH HEADERS FROM 'file:///uniprot.interpro.genes.csv' AS line 
+MATCH (k:InterPro),(g:Gene) 
+WHERE k.id=line.keyword AND g.id=line.bnumber
+WITH k,g 
+MERGE (k)-[:encoded_in]->(g)
+" %>% cypher
+```
+
+```{r}
+"MATCH (n:InterPro)-[r:encoded_in]->(:Gene) RETURN count(r)" %>% cypher %>% unlist # 15401 15515
+```
+## GO
+### Load CSV NODES
+```{r}
+"MATCH (:GOTerm)-[r]-() DELETE r" %>% cypher
+"MATCH (n:GOTerm) DELETE n" %>% cypher
+"
+LOAD CSV WITH HEADERS FROM 'file:///go.nodes.tsv' AS row FIELDTERMINATOR '\t' 
+CREATE (n:GOTerm)
+SET n.id = row.id,
+n.name = row.desc,
+n.desc  = row.def,
+n.namespace = row.namespace
+"  %>% cypher
+```
+Verif
+```{r}
+"MATCH (n:GOTerm) RETURN count(n)" %>% cypher %>% unlist # 42887
+# 42887
+```
+
+```{r}
+"CREATE INDEX ON :GOTerm(id)" %>% cypher
+```
+expected
+/## $error_code
+/## [1] "Neo.ClientError.Schema.EquivalentSchemaRuleAlreadyExists"
+## 
+/## $error_message
+/## [1] "An equivalent index already exists, 'Index( id=9, name='index_1a03f871', type='GENERAL BTREE', schema=(:GOTerm {id}), indexProvider='native-btree-1.0' )'."
+Extait du contenu :
+```{r}
+"MATCH (n:GOTerm) RETURN n LIMIT 6" %>% cypher %>% .$n
+```
+
+### RECUP lien arete relation is a
+```{r}
+"
+LOAD CSV WITH HEADERS FROM 'file:///go.is_a.edges.tsv' AS line FIELDTERMINATOR '\t' 
+MATCH (t1:GOTerm),(t2:GOTerm) 
+WHERE t1.id=line.term1 AND t2.id=line.term2
+WITH t1,t2 
+MERGE (t2)-[r:is_a]->(t1)
+" %>% cypher
+```
+
+```{r}
+"MATCH ()-[r:is_a]->() RETURN count(r)" %>% cypher %>% unlist #68521
+```
+
+### RECUP lien arete relation  part of
+```{r}
+"
+LOAD CSV WITH HEADERS FROM 'file:///go.part_of.edges.tsv' AS line FIELDTERMINATOR '\t' 
+MATCH (t1:GOTerm),(t2:GOTerm) 
+WHERE t1.id=line.term1 AND t2.id=line.term2
+WITH t1,t2 
+MERGE (t2)-[r:part_of]->(t1)
+" %>% cypher
+```
+
+```{r}
+"MATCH ()-[r:part_of]->() RETURN count(r)" %>% cypher %>% unlist #6785
+```
+
+
+```{r}
+GOTerms = uniprot %>% 
+  select(uniprotID=Entry, GOTerm=`Gene Ontology IDs`) %>%
+  right_join(mapping, by = join_by(uniprotID)) %>% # right join to remove those without bnumber
+  separate_rows(GOTerm, sep='; ') %>%
+  select(bnumber, GOTerm) %>%
+  arrange(bnumber)
+GOTerms
+```
+
+Save CSV file for Neo4J
+```{r}
+GOTerms %>% write_csv("../neo4j.import/uniprot.GOTerm.bnumber.csv")
+```
+
+## Create conexion Merge into graph
+```{r}
+"
+LOAD CSV WITH HEADERS FROM 'file:///uniprot.GOTerm.bnumber.csv' AS line
+MATCH (t:GOTerm),(g:Gene) 
+WHERE t.id=line.GOTerm AND g.id=line.bnumber
+WITH t,g
+MERGE (t)-[:annotates]->(g)
+" %>% cypher
+```
+
+Vérification
+```{r}
+"MATCH ()-[r:annotates]->() RETURN count(r)" %>% cypher %>% unlist #22373
+```
+
+# TUs 
+## Charge noeud TU (list unique TU/geneTU)-> 6665
+```{r}
+names(tus_to_export)
+dim(tus_to_export)
+length(unique(tus_to_export$ecocyID))
+```
+```{r}
+# LOAD dans neo4j liste noeud 5TU unique et toutes les info relatives a chaque Tu)
+"MATCH (:TU)-[r:harbors]->(:Gene) DELETE r" %>% cypher
+'MATCH (n:TU) DELETE n' %>% cypher
+
+
+"LOAD CSV WITH HEADERS FROM 'file:///ecocyc.tu.csv' AS row  
+CREATE (n:TU)
+SET n=row,
+ n.id = row.ecocyID,
+ n.strand = row.Strand,
+ n.begin = toInteger(row.Left),
+ n.end = toInteger(row.Right),
+ n.desc  = row.desc,
+ n.organism = toInteger('511145')
+ " %>% cypher
+```
+
+## verif
+```{r}
+'MATCH (n:TU) RETURN count(n)' %>% cypher %>% unlist #3634 expected 3696
+```
+## VISU
+```{r}
+"MATCH (n:TU) RETURN n LIMIT 6" %>% cypher %>% .$n
+```
+
+## Index sinon l’ajout de liens et les requêtes peuvent être très longs
+```{r}
+'DROP INDEX index_1e15df2a'%>% cypher
+'CREATE INDEX ON :TU(id)' %>% cypher
+```
+
+## Creation LIEN ARETE relation connection association
+```{r}
+"MATCH (:TU)-[r:harbors]->(:Gene) DELETE r" %>% cypher
+
+# EXPORT
+"
+LOAD CSV WITH HEADERS FROM 'file:///ecocyc.tu.genes.csv' AS line 
+MATCH (p:TU),(g:Gene) 
+WHERE p.id=line.ecocyID AND g.id=line.bnumber
+WITH p,g 
+MERGE (p)-[:harbors]->(g)
+" %>% cypher
+
+```
+Vérification
+```{r}
+"MATCH (n:TU)-[r:harbors]->(:Gene) RETURN count(r)" %>% cypher %>% unlist # expected 6841
+```
+
+# Pathway
+## Charge noeud pathways (list unique pathways/gene)-> 6665
+
+```{r}
+names(pathways_to_export)
+```
+## Export to Neo4J 
+```{r}
+# LOAD dans neo4j
+"MATCH (:Pathway)-[r:requires]->(:Gene) DELETE r" %>% cypher
+'MATCH (n:Pathway) DELETE n' %>% cypher
+
+"LOAD CSV WITH HEADERS FROM 'file:///ecocyc.pathways.csv' AS row  
+CREATE (n:Pathway)
+SET n=row,
+ n.id = row.ecocyID,
+ n.organism = toInteger('511145'),
+ n.desc  = row.desc
+ " %>% cypher
+```
+
+## verif
+```{r}
+'MATCH (n:Pathway) RETURN count(n)' %>% cypher %>% unlist #438 ->OK expected 442
+```
+## VISU
+```{r}
+"MATCH (n:Pathway) RETURN n LIMIT 15" %>% cypher %>% .$n
+```
+
+## Index sinon l’ajout de liens et les requêtes peuvent être très longs
+```{r}
+'CREATE INDEX ON :Pathway(id)' %>% cypher
+```
+
+
+
+## Creation LIEN ARETE relation connection association
+```{r}
+"MATCH (:Pathway)-[r:requires]->(:Gene) DELETE r" %>% cypher
+
+# EXPORT
+"
+LOAD CSV WITH HEADERS FROM 'file:///ecocyc.pathways.genes.csv' AS line 
+MATCH (p:Pathway),(g:Gene) 
+WHERE p.id=line.ecocyID AND g.id=line.bnumber
+WITH p,g 
+MERGE (p)-[:requires]->(g)
+" %>% cypher
+```
+Vérification
+```{r}
+"MATCH (:Pathway)-[r:requires]->(:Gene) RETURN count(r)" %>% cypher %>% unlist #38194
+```
+
+
+

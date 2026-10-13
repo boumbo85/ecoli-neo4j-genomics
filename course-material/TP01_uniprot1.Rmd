@@ -1,0 +1,558 @@
+---
+title: "TP01_graph"
+output:
+  html_document:
+    df_print: paged
+date: "2023-10-11"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(jsonlite) 
+```
+
+# createtable gene
+## import data
+```{r}
+uniprot <- read_tsv("../downloads/uniprotkb_proteome_UP000000625_2023_10_11.tsv.gz", show_col_types = F)
+uniprot %>% head
+```
+
+Nombre de lignes attendu : 4403
+```{r}
+dim(uniprot) # 4403 ok
+```
+A partir de ce tibble, il s’agit d’extraire les bnumbers de la colonne Gene names (ordered locus). La fonction str_extract permet d’extraire un pattern à partir d’une expression régulière (ici, ce sera 'b\\d+') d’une chaîne de caractères.
+```{r}
+mapping <- uniprot %>% 
+  select(Entry, names = `Gene Names`) %>%
+  mutate(bnumber=str_extract(names, 'b\\d+')) %>%
+  select(bnumber, uniprotID=Entry) %>%
+  filter(!is.na(bnumber)) %>% # 2023 → P0DQD7 and P0A6D5 are lost (no bnumber)
+  arrange(bnumber)
+mapping %>% head
+```
+```{r}
+dim(mapping)
+```
+utile pour recup les identifiants
+
+## 1.1.1.2 Reformatage des données
+
+A présent, il s’agit de générer la liste des protéines associées à chaque mot-clé (colonne Keywords). Pour cela, on ne gardera que les colonnes Entry et Keywords, une jointure avec mapping va permettre de faire le mapping avec les bnumbers. La fonction separate_rows va nous servir à découper la colonne Keywords et répartir les mots-clés sur des lignes du tibble 
+
+```{r}
+keywords = uniprot %>% 
+  select(uniprotID=Entry, keyword=Keywords) %>%
+  right_join(mapping, by="uniprotID") %>% # right join to remove those without bnumber
+  separate_rows(keyword, sep=';') %>%
+  select(bnumber, keyword) %>% #groupby par le mem mot clef
+  arrange(bnumber) 
+keywords %>% head
+```
+```{r}
+dim(keywords)
+```
+
+Nombre de lignes attendu : 27506
+
+Maintenant, il ne s’agit plus que de regrouper les bnumbers par mot-clé :
+
+on prend que les 2 col qui nous intererss et a on veut a chaque bnumer recup tous les mots clef
+et divise col keyword pour associe a tous les bnumber
+
+```{r}
+ref_sets = keywords %>% 
+  group_by(keyword) %>%
+  summarise(count=n(), elements = list(bnumber)) %>%
+  ungroup %>%
+  filter(count>1)  %>%
+  select(id=keyword, desc=count, elements)
+
+dim(ref_sets)
+ref_sets
+```
+Pour utiliser ces données avec python, nous allons sauvegarder le tibble au format JSON  avec la library library(jsonlite) :
+
+///# output : 
+/## Attaching package: 'jsonlite'
+/## The following object is masked from 'package:purrr':
+/##     flatten
+
+```{r}
+# exportation
+ref_sets %>% 
+  toJSON %>% 
+  write("../ref.sets/uniprot.keywords.sets.json")
+```
+Aperçu du contenu :
+
+```{bash}
+jq . "../ref.sets/uniprot.keywords.sets.json" | head -15
+```
+
+# InterPro
+refaire comme pour avec keywords pour interpro ;
+
+```{r} 
+interpro = uniprot %>% 
+  select(uniprotID = Entry, keyword = InterPro) %>%
+  right_join(mapping, by = "uniprotID") %>% 
+  separate_rows(keyword, sep = ';') %>%
+  filter(!keyword=='') %>% # si on regarde la col interpro, vide a la fin. donc va etre aussi enregistre comme '' vide !!! il faut le virer sinon pourri script python
+  select(bnumber, keyword) %>%
+  arrange(bnumber)
+
+interpro %>% head
+```
+```{r}
+dim(interpro) #20037 sans vide 15k
+length(unique(interpro$bnumber))
+```
+
+Maintenant, il ne s’agit plus que de regrouper les bnumbers par mot-clé :
+
+on prend que les 2 col qui nous intererss et a on veut a chaque bnumer recup tous les mots clef
+et divise col keyword pour associe a tous les bnumber
+
+```{r}
+ref_sets_inter = interpro %>% 
+  group_by(keyword) %>%
+  summarise(count=n(), elements = list(bnumber)) %>%
+  ungroup %>%
+  filter(count>1)  %>%
+  select(id=keyword, desc=count, elements)
+ref_sets_inter
+```
+Pour utiliser ces données avec python, nous allons sauvegarder le tibble au format JSON  avec la library library(jsonlite) :
+
+```{r}
+# exportation
+ref_sets_inter %>% 
+  toJSON %>% 
+  write("../ref.sets/uniprot.interpro.sets.json")
+```
+Aperçu du contenu :
+
+```{bash}
+jq . "../ref.sets/uniprot.interpro.sets.json" | head -15
+```
+
+# GO
+refaire comme pour avec keywords pour Go ;
+```{r}
+names(uniprot)
+```
+
+```{r}
+go = uniprot %>% 
+  select(uniprotID = Entry, keyword = 'Gene Ontology IDs') %>%
+  right_join(mapping, by = "uniprotID") %>% 
+  separate_rows(keyword, sep = '; ') %>%
+  filter(!keyword=='') %>% # si on regarde la col interpro, vide a la fin. donc va etre aussi enregistre comme '' vide !!! il faut le virer sinon pourri script python
+
+  select(bnumber, keyword) %>%
+  arrange(bnumber)
+
+go %>% head
+```
+
+```{r}
+dim(go) #22874
+```
+
+Maintenant, il ne s’agit plus que de regrouper les bnumbers par mot-clé :
+
+on prend que les 2 col qui nous intererss et a on veut a chaque bnumer recup tous les mots clef
+et divise col keyword pour associe a tous les bnumber
+
+```{r}
+ref_sets_go = go %>% 
+  group_by(keyword) %>%
+  summarise(count=n(), elements = list(bnumber)) %>%
+  ungroup %>%
+  filter(count>1)  %>%
+  select(id=keyword, desc=count, elements)
+ref_sets_go
+```
+Pour utiliser ces données avec python, nous allons sauvegarder le tibble au format JSON  avec la library library(jsonlite) :
+
+///# output : 
+/## Attaching package: 'jsonlite'
+/## The following object is masked from 'package:purrr':
+/##     flatten
+
+```{r}
+# exportation
+ref_sets_go %>% 
+  toJSON %>% 
+  write("../ref.sets/uniprot.go.sets.json")
+```
+Aperçu du contenu :
+
+```{bash}
+jq . "../ref.sets/uniprot.go.sets.json" | head -15
+```
+
+# TU
+pour faire TU:
+1/ charger all tu.txt -> vire Object ID, separer la colonne 'Genes of transcription unit'
+2/ charger all genes -> recup bnumber (correspondence avec la liste de geneTU; et faire jonction
+3/ exporter 
+## dL TU
+```{r}
+TU <- read_tsv("../downloads/all-transcription-units.txt", show_col_types = F)
+TU %>% head
+```
+```{r}
+# verifier la diff entre object id et Site
+(TU$Site == TU$`Object ID`) %>% as.numeric() %>% sum(na.rm=TRUE)
+which(is.na(TU$Site))
+which(is.na(TU$`Object ID`))
+```
+```{r}
+# qui sont les de nan ? 
+TU %>% filter(is.na(Site))
+```
+
+```{r}
+names(TU)
+```
+```{r}
+# check unque
+dim(TU) #3697
+length(unique(TU$`Object ID`)) #3691 or  3697 ! DONC DOUBLON
+length(unique(TU$Site)) #3691
+```
+
+SEPARE LES GENETU, UNE LIGNE PAR gene TU
+```{r}
+# Separation des nom des genes
+TU_reshaped = TU %>% filter(!is.na(Site)) %>%
+  select(ecocyID = Site, 
+         gene = 'Genes of transcription unit',
+         Right = "Right",
+         Left = "Left",
+         Strand = "Strand" ) %>%
+  separate_rows(gene, sep = ' // ') %>%
+  filter(!gene=='') # si on regarde la col interpro, vide a la fin. donc va etre aussi enregistre comme '' vide !!! il faut le virer sinon pourri script python
+
+TU_reshaped %>% head
+```
+
+```{r}
+dim(TU_reshaped) #6586
+```
+```{r}
+# Check na
+TU_reshaped %>% filter(is.na(ecocyID)) #%>% length
+```
+
+```{r}
+length(unique(TU_reshaped$gene)) # 4493 
+length(unique(TU_reshaped$ecocyID)) # 3690
+```
+
+```{r}
+# Verifie les doublons
+doublons = TU_reshaped [duplicated(TU_reshaped),]
+# Vérifiez si des doublons existent
+if (nrow(doublons) > 0) {
+  cat("Il y a des doublons dans le dataframe.\n")
+  print(doublons)
+} else {
+  cat("Aucun doublon n'a été trouvé dans le dataframe.\n")
+}
+```
+
+## Recherche correcpondance dans liste gene number
+```{r}
+all_genes <- read_tsv("../downloads/All-instances-of-Genes-in-Escherichia-coli-K-12-substr.-MG1655.txt", show_col_types = F)
+all_genes %>% head
+```
+```{r}
+# Separe Names et recup b avec
+all_genes_reshaped <- all_genes %>%
+  select(ecocyID = 'Transcription Units', gene = Genes, extracted_terms = Names) %>%
+  separate_rows(extracted_terms, sep = ' // ') %>%
+  filter(!gene == '') %>%
+  mutate(bnumber = str_extract(extracted_terms, "b\\d+")) %>% 
+  filter(!is.na(bnumber)) %>%
+  select(-extracted_terms) %>%
+  separate_rows(ecocyID, sep = ' // ')
+# si on regarde la col interpro, vide a la fin. donc va etre aussi enregistre comme '' vide !!! il faut le virer sinon pourri script python 
+all_genes_reshaped %>% head
+```
+```{r}
+dim(all_genes_reshaped %>% unique) #6665
+```
+```{r}
+# check na
+all_genes_reshaped %>% filter(is.na(bnumber))
+```
+
+```{r}
+length(unique(all_genes_reshaped$gene)) # 4489 (tu 4493) 
+length(unique(all_genes_reshaped$ecocyID)) # 3635 (tu 3690)
+length(unique(all_genes_reshaped$bnumber)) # 4548
+```
+## creer file
+```{r}
+# Jointure entre les 2 tables, TU et all genes sur geneTU, 
+tus_to_export <- all_genes_reshaped %>%
+  left_join(TU_reshaped, by = c("gene","ecocyID")) %>% filter(!is.na(bnumber)) %>% filter(!is.na(ecocyID)) %>% mutate(desc = paste(Strand, Left, Right, sep = " , ")) 
+# car doublons; mais la combinaison des 2 est unique !!!!
+tus_to_export %>% head()
+```
+
+```{r}
+dim(tus_to_export) #6666 avec na 6545 sans na et 6665 dans all gene
+```
+```{r}
+# Check na
+tus_to_export %>% filter(is.na(bnumber)) 
+tus_to_export %>% filter(is.na(ecocyID))#%>% length
+```
+```{r}
+# pour python
+ref_sets_tu = tus_to_export %>% 
+  group_by(ecocyID) %>%
+  summarise(count=n(), elements = list(bnumber)) %>%
+  ungroup %>%
+  filter(count>1)  %>%
+  select(id=ecocyID, desc=count, elements)
+
+dim(ref_sets_tu)
+ref_sets_tu
+```
+
+
+Pour utiliser ces données avec python, nous allons sauvegarder le tibble au format JSON  avec la library library(jsonlite) :
+
+///# output : 
+/## Attaching package: 'jsonlite'
+/## The following object is masked from 'package:purrr':
+/##     flatten
+
+```{r}
+# exportation
+ref_sets_tu %>% 
+  toJSON %>% 
+  write("../ref.sets/ecocys.tu.sets.json")
+```
+Aperçu du contenu :
+
+```{bash}
+jq . "../ref.sets/ecocys.tu.sets.json" | head -15
+```
+## EXPORT EN CSV pour neo4j
+```{r}
+# pour les noeuds, faire une liste unique TUs
+tus_to_export %>% filter(!duplicated(ecocyID)) %>%  
+  select (ecocyID,Right,Left,Strand,desc) %>% 
+  write_csv("../neo4j.import/ecocyc.tu.csv")
+# expected 3635
+
+# pour les relations connexion avec gene
+tus_to_export %>% select(c(ecocyID,bnumber)) %>% unique %>% write_csv("../neo4j.import/ecocyc.tu.genes.csv") #6666
+```
+
+
+# Pathway
+pour faire pathway:
+1/ charger pathway.txt -> vire Object ID, separer la colonne 'Genes of pathway'
+utiliser all genes pour correspondances -> recup bnumber (correspondence avec la liste de geneTU; et faire jonction
+3/ exporter 
+
+## dL pathway
+```{r}
+pathway <- read_tsv("../downloads/All-instances-of-Pathways-in-Escherichia-coli-K-12-substr.-MG1655.txt", show_col_types = F)
+pathway %>% head
+```
+
+## quick explore
+```{r}
+# qui sont les de nan ? 
+pathway %>% filter(is.na(Pathways))
+```
+```{r}
+names(pathway)
+```
+-> utilisation variables common names pour desc
+
+```{r}
+# check unque
+dim(pathway) # 438
+```
+
+## SEPARE LES GENES implique pathway, UNE LIGNE PAR gene pathway
+```{r}
+# Separation des nom des genes, filter(!is.na(Site)) %>% pas necessaires
+pathway_reshaped = pathway %>% 
+  select(ecocyID = Pathways, 
+         gene = "Genes of pathway",
+         desc = "Common-Name") %>%
+  separate_rows(gene, sep = ' // ') %>%
+  filter(!gene=='') # enregistre le vide a la fin. donc va etre aussi enregistre comme '' vide !!! il faut le virer sinon pourri script python
+
+pathway_reshaped %>% head
+```
+
+```{r}
+dim(pathway_reshaped) #2849
+```
+
+```{r}
+# Check na
+pathway_reshaped %>% filter(is.na(ecocyID)) #ok
+```
+
+```{r}
+# check unique
+length(unique(pathway_reshaped$gene)) # 1156 
+length(unique(pathway_reshaped$ecocyID)) # 438
+```
+
+```{r}
+# Verifie les doublons
+doublons2 <- pathway_reshaped[duplicated(pathway_reshaped[c("ecocyID", "gene")]), ] # Vérifier si des doublons existent
+if (nrow(doublons2) > 0) {
+  cat("Il y a des doublons dans le dataframe.\n")
+  print(doublons2)
+} else {
+  cat("Aucun doublon n'a été trouvé dans le dataframe.\n")
+}
+```
+une ligne = un couple pathway/gene
+
+## Recherche correcpondance dans liste gene number dans all gene (bd ecocyd inclu  )
+j ai deja recupere les bnumber a partir de all_genes
+
+```{r}
+all_genes%>% head
+```
+```{r}
+ all_genes_reshaped %>% head
+```
+```{r}
+dim(all_genes) #4523
+dim(all_genes_reshaped) #6666
+dim(all_genes_reshaped %>% unique) #6665
+```
+
+## creer fichiers
+```{r}
+# Jointure entre les 2 tables, pathway et all genes. je veux recuperer la colonne bnumber 
+pathways_to_export = left_join(pathway_reshaped, all_genes_reshaped %>% select(gene, bnumber), by = "gene")  %>% filter(!is.na(bnumber)) %>%
+  distinct()
+
+
+# car doublons; mais la combinaison des 2 est unique !!!!
+pathways_to_export %>% head() #2863
+```
+
+```{r}
+# Check duplicated
+dim(pathways_to_export) # 4936 avec na /4932 sans na et 6665 dans all gene
+
+dim(pathways_to_export %>% unique) #2863
+length(unique(pathways_to_export$bnumber))
+length(unique(pathways_to_export$ecocyID))
+```
+expected 2849 (cf patways dimension). need remove duplicates -> 2863
+```{r}
+# Check the difference between the 2 (why 2849 and 2863 row ). Duplicates?
+doublons22 <- pathways_to_export[duplicated(pathways_to_export[c("ecocyID", "gene")]), ] # Vérifier si des doublons existent
+if (nrow(doublons22) > 0) {
+  cat("Il y a des doublons dans le dataframe.\n")
+  print(doublons22)
+} else {
+  cat("Aucun doublon n'a été trouvé dans le dataframe.\n")
+}
+```
+It seems that, if "ecocyID" and "gene" are similar, the bnumber is not, for example:
+PWY0-521	and G7724, b3372 and b4474
+Sometimes, bnumber and gene number are the same (b4467,G0-8601), but not the pathway.
+We need to check on 3 conditions: gene, bnumber, ecocyID :
+```{r}
+#  Check duplicates. need remove if the bnumber, gene and ecocyID are the same
+doublons22 <- pathways_to_export[duplicated(pathways_to_export[c("ecocyID", "gene","bnumber")]), ] # Vérifier si des doublons existent
+if (nrow(doublons22) > 0) {
+  cat("Il y a des doublons dans le dataframe.\n")
+  print(doublons22)
+} else {
+  cat("Aucun doublon n'a été trouvé dans le dataframe.\n")
+}
+```
+
+
+OK; we need to keep everything. 
+
+```{r}
+# Check na
+pathways_to_export %>% filter(is.na(bnumber)) # ok (%>% length)
+```
+
+```{r}
+# Check if all the row from pathway_reshaped are in the df pathways_to_export
+diff_rows <- anti_join(pathway_reshaped, pathways_to_export, by = "gene")
+
+# Print differences
+print(diff_rows)
+```
+
+```{r}
+# Check gene G8221
+all_genes_reshaped %>% filter(gene == "G8221") #none
+
+# so check if the corresponding ecocyID exist 
+all_genes_reshaped %>% filter('ecocyID' == "ILEUSYN-PWY")
+```
+The Genes 'G8221' is not present in all_genes df where the bnumber is.
+
+Pour utiliser ces données avec python, nous allons sauvegarder le tibble au format JSON  avec la library library(jsonlite) :
+
+///# output : 
+/## Attaching package: 'jsonlite'
+/## The following object is masked from 'package:purrr':
+/##     flatten
+
+## TO DOOOOOOOOOOOOOO NOT GOOD; need group by
+```{r}
+# pour python
+ref_sets_pathways = pathways_to_export %>% 
+  group_by(ecocyID) %>%
+  summarise(count=n(), elements = list(bnumber)) %>%
+  ungroup %>%
+  filter(count>1)  %>%
+  select(id=ecocyID, desc=count, elements)
+
+dim(ref_sets_pathways)
+ref_sets_pathways
+```
+
+```{r}
+# exportation Json, manque compte et duplicated
+pathways_to_export %>% 
+  toJSON %>% 
+  write("../ref.sets/ecocys.pathways.sets.json")
+```
+Aperçu du contenu :
+```{bash}
+jq . "../ref.sets/ecocys.pathways.sets.json" | head -15
+```
+EXPORT EN CSV pour neo4j
+```{r}
+# pour les noeuds
+pathways_to_export %>% 
+  filter(!duplicated(ecocyID)) %>%  
+  select (ecocyID,desc) %>% write_csv("../neo4j.import/ecocyc.pathways.csv")
+# 438
+
+# pour les relations connexion avec gene
+pathways_to_export %>% select(c(ecocyID,bnumber)) %>% unique %>% write_csv("../neo4j.import/ecocyc.pathways.genes.csv") #2869
+```
