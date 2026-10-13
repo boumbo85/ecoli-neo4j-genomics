@@ -131,6 +131,27 @@ amino acid and chorismate superpathways — exactly the expected hierarchy, sinc
 derives from chorismate. The check runs without Neo4j (it reads the same `csv/` edge files) so
 it also runs in CI.
 
+## Co-expression cohesion (STRING)
+
+Enrichment tells you *which* functions a gene set is annotated for. A different, complementary
+question: do these genes actually **behave as a module** — are they more co-expressed with each
+other than a random set of the same size? `coexpression_analysis.py` answers it with a
+permutation test on the STRING co-expression edges.
+
+```bash
+python coexpression_analysis.py query/query6.txt -n 2000
+```
+
+| Gene set | genes | observed strength | random mean | fold | p-value |
+|----------|-------|-------------------|-------------|------|---------|
+| study set (query6) | 113 | 305,975 | 23,140 | **13.2×** | ≤ 5e-4 |
+| trp operon (control) | 5 | 9,934 | 39 | **252×** | ≤ 5e-4 |
+
+The study set is 13× more internally co-expressed than chance — strong evidence it is a genuine
+functional module, not an arbitrary list, which backs up the biofilm interpretation. The trp
+operon, co-transcribed by definition, scores 252× as a positive control. This uses the STRING
+edges that are otherwise only stored in the graph.
+
 ## Methods & design choices
 
 These are the questions a reviewer asks, answered up front.
@@ -149,9 +170,8 @@ These are the questions a reviewer asks, answered up front.
   not the genome — this changes the p-values. Supporting a custom background is on the roadmap.
 - **Multiple testing.** p-values are adjusted with Benjamini-Hochberg (`-c`), reported as
   q-values. See the note below.
-- **STRING coexpression** is loaded into the graph but not yet used by the enrichment test. It is
-  there for a planned "are these genes more co-expressed than expected?" analysis; until then it
-  is honest to call it unused.
+- **STRING coexpression** powers a second, complementary check (see below): is the query set more
+  co-expressed with itself than chance?
 
 > **A fixed bug, worth telling.** The project report already flagged that FDR-adjusted and raw
 > result counts came out almost identical "which should not happen — probably a bug". It was: the
@@ -167,6 +187,8 @@ These are the questions a reviewer asks, answered up front.
 .
 ├── app.py                     # main enrichment tool (CLI + Cypher queries)
 ├── enrichment.py              # statistical measures + BH FDR (pure, unit-tested)
+├── coexpression.py            # STRING co-expression cohesion (pure, unit-tested)
+├── coexpression_analysis.py   # permutation test on a gene set, no Neo4j needed
 ├── validate.py                # positive control (trp operon), no Neo4j needed
 ├── plot_enrichment.py         # bar chart of top enriched terms
 ├── load_graph.cypher          # builds the graph from csv/ (LOAD CSV)
@@ -275,8 +297,8 @@ Things that would push this from a solid academic project to a portfolio piece:
 
 - [x] **Correct FDR** — Benjamini-Hochberg via `statsmodels`, q-values reported, unit-tested.
 - [x] **Positive control** — trp operon validation, runs in CI.
+- [x] **Use the STRING edges** — co-expression cohesion permutation test (`coexpression_analysis.py`).
 - [ ] **Custom background** — accept a background gene list (assay-specific) instead of the whole genome.
-- [ ] **Use the STRING edges** — test whether a query set is more co-expressed than expected.
 - [ ] **End-to-end CI** — spin up Neo4j as a service in GitHub Actions and run one real enrichment query.
 - [ ] **Package the CLI** — a `pyproject.toml` + console entry point (`ecoli-enrich ...`).
 - [ ] **Generalise beyond E. coli** — parameterise the organism so the same schema works for any annotated genome.

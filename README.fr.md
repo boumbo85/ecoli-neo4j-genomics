@@ -134,6 +134,27 @@ aminés aromatiques et du chorismate — exactement la hiérarchie attendue, pui
 dérive du chorismate. Le test tourne sans Neo4j (il lit les mêmes fichiers `csv/`), donc il
 s'exécute aussi en CI.
 
+## Cohésion de coexpression (STRING)
+
+L'enrichissement dit *pour quelles* fonctions un set de gènes est annoté. Une question
+complémentaire : ces gènes se comportent-ils comme un **module** — sont-ils plus coexprimés entre
+eux qu'un set aléatoire de même taille ? `coexpression_analysis.py` y répond par un test de
+permutation sur les arêtes de coexpression STRING.
+
+```bash
+python coexpression_analysis.py query/query6.txt -n 2000
+```
+
+| Set de gènes | gènes | force observée | moyenne aléatoire | ratio | p-value |
+|--------------|-------|----------------|-------------------|-------|---------|
+| set d'étude (query6) | 113 | 305 975 | 23 140 | **13,2×** | ≤ 5e-4 |
+| opéron trp (contrôle) | 5 | 9 934 | 39 | **252×** | ≤ 5e-4 |
+
+Le set d'étude est 13× plus coexprimé en interne que le hasard — preuve forte qu'il s'agit d'un
+vrai module fonctionnel et non d'une liste arbitraire, ce qui appuie l'interprétation biofilm.
+L'opéron trp, co-transcrit par définition, atteint 252× comme contrôle positif. Ce test exploite
+les arêtes STRING jusqu'ici seulement stockées dans le graphe.
+
 ## Méthodes & choix de conception
 
 Les questions qu'un jury pose, répondues d'emblée.
@@ -152,9 +173,8 @@ Les questions qu'un jury pose, répondues d'emblée.
   le génome — ça change les p-values. Un background personnalisé est dans la feuille de route.
 - **Tests multiples.** Les p-values sont ajustées par Benjamini-Hochberg (`-c`), reportées en
   q-values. Voir la note ci-dessous.
-- **Coexpression STRING** chargée dans le graphe mais pas encore utilisée par le test. Elle est là
-  pour une future analyse « ces gènes sont-ils plus coexprimés qu'attendu ? » ; d'ici là, autant
-  dire honnêtement qu'elle n'est pas exploitée.
+- **Coexpression STRING** alimente un second test complémentaire (voir ci-dessous) : le set de
+  requête est-il plus coexprimé avec lui-même que le hasard ?
 
 > **Un bug corrigé, qui vaut d'être raconté.** Le rapport du projet avait déjà noté que les
 > comptes de résultats ajustés et bruts étaient quasi identiques « ce qui ne devrait pas arriver —
@@ -171,6 +191,8 @@ Les questions qu'un jury pose, répondues d'emblée.
 .
 ├── app.py                     # outil principal d'enrichissement (CLI + requêtes Cypher)
 ├── enrichment.py              # mesures statistiques + FDR BH (fonctions pures, testées)
+├── coexpression.py            # cohésion de coexpression STRING (fonctions pures, testées)
+├── coexpression_analysis.py   # test de permutation sur un set de gènes, sans Neo4j
 ├── validate.py                # contrôle positif (opéron trp), sans Neo4j
 ├── plot_enrichment.py         # bar chart des top termes enrichis
 ├── load_graph.cypher          # construit le graphe depuis csv/ (LOAD CSV)
@@ -279,8 +301,8 @@ Ce qui ferait passer ce projet d'un bon travail académique à une pièce de por
 
 - [x] **FDR correct** — Benjamini-Hochberg via `statsmodels`, q-values reportées, testé unitairement.
 - [x] **Contrôle positif** — validation sur l'opéron trp, exécutée en CI.
+- [x] **Exploiter les arêtes STRING** — test de permutation de cohésion de coexpression (`coexpression_analysis.py`).
 - [ ] **Background personnalisé** — accepter une liste de gènes de référence (spécifique au dosage) au lieu du génome entier.
-- [ ] **Exploiter les arêtes STRING** — tester si un set de requête est plus coexprimé qu'attendu.
 - [ ] **CI de bout en bout** — lancer Neo4j comme service dans GitHub Actions et exécuter une vraie requête d'enrichissement.
 - [ ] **Packager la CLI** — un `pyproject.toml` + point d'entrée (`ecoli-enrich ...`).
 - [ ] **Généraliser au-delà d'E. coli** — paramétrer l'organisme pour que le même schéma serve à n'importe quel génome annoté.
