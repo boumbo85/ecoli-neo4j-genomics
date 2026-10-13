@@ -291,6 +291,13 @@ python plot_enrichment.py pathways.tsv -o fig.png -t "Top enriched pathways"
 NCBI (`GCF_000005845.2`), EcoCyc, UniProt (proteome `UP000000625`),
 Gene Ontology (`go-basic.obo`), STRING v12.
 
+## Report
+
+The full project report (corrected version) is in
+[`report/`](report/CAMPOS_JULIE_M2BBS_GNDS_corrige.pdf) — it covers the database design,
+the enrichment method, the biological interpretation, the FDR fix and the co-expression
+validation.
+
 ## Roadmap / next steps
 
 Things that would push this from a solid academic project to a portfolio piece:
