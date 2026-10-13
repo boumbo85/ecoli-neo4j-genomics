@@ -29,3 +29,6 @@ jobs:
 
       - name: Positive control (trp operon)
         run: python validate.py
+
+      - name: Co-expression cohesion (trp operon, quick)
+        run: python coexpression_analysis.py query/positive_control_trp.txt -n 500
