@@ -132,7 +132,7 @@ def main():
     results.sort(key=lambda x: x["p-value"])
 
     if param.adjust:
-        results = enrichment.fdr_filter(results, param.alpha, query_size)
+        results = enrichment.fdr_filter(results, param.alpha)
 
     if param.limit and param.limit > 0:
         results = results[: param.limit]
@@ -144,12 +144,16 @@ def main():
     out = open(param.output, "w", newline="") if param.output else sys.stdout
     try:
         writer = csv.writer(out, delimiter="\t")
-        writer.writerow(["id", "p-value", "common", "target", "description", "genes"])
+        header = ["id", "p-value", "common", "target", "description", "genes"]
+        if param.adjust:
+            header.insert(2, "q-value")  # BH-adjusted
+        writer.writerow(header)
         for r in results:
-            writer.writerow([
-                r["id"], r["p-value"], r["common.n"], r["target.n"],
-                r["desc"], ", ".join(r["elements.common"]),
-            ])
+            row = [r["id"], r["p-value"], r["common.n"], r["target.n"],
+                   r["desc"], ", ".join(r["elements.common"])]
+            if param.adjust:
+                row.insert(2, r.get("q-value", ""))
+            writer.writerow(row)
     finally:
         if param.output:
             out.close()

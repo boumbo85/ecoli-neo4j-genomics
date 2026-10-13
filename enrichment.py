@@ -63,15 +63,60 @@ def score(measure, k, t, q, N):
     return fn(k, t, q, N)
 
 
-def fdr_filter(results, alpha, query_size):
-    """Benjamini-Hochberg style filter over a list of result dicts.
+def benjamini_hochberg(pvalues):
+    """Benjamini-Hochberg FDR adjustment.
 
-    `results` must be sorted by ascending p-value. Each item needs a 'p-value' key.
-    Returns the subset whose adjusted p-value passes `alpha`.
+    Returns q-values in the SAME order as the input p-values.
+
+    The adjustment is p_(i) * m / rank_i, where m is the number of tests and
+    rank_i the ascending rank of p_(i). The classic monotonicity constraint is
+    enforced (a q-value is never larger than a higher-ranked one) and values
+    are capped at 1.
+
+    Uses statsmodels when available (reference implementation); otherwise falls
+    back to an equivalent pure-Python version.
+
+    Note on the earlier version of this code: the correction read
+        adjusted = p * query_size / rank
+    i.e. it multiplied by the *size of the query gene set* instead of by *m, the
+    number of terms tested*. That is wrong — BH scales by the number of
+    hypotheses, not by the sample size — and it explains the project report's
+    observation that adjusted and raw result counts came out almost identical.
     """
+    try:
+        from statsmodels.stats.multitest import multipletests
+        _, qvals, _, _ = multipletests(pvalues, method="fdr_bh")
+        return list(qvals)
+    except Exception:
+        pass
+
+    m = len(pvalues)
+    if m == 0:
+        return []
+    # rank p-values ascending, apply p * m / rank, then enforce monotonicity
+    order = sorted(range(m), key=lambda i: pvalues[i])
+    qvals = [0.0] * m
+    prev = 1.0
+    for rank in range(m, 0, -1):          # from largest p-value down to smallest
+        idx = order[rank - 1]
+        q = pvalues[idx] * m / rank
+        prev = min(prev, q)               # monotone non-decreasing with p-value
+        qvals[idx] = min(prev, 1.0)
+    return qvals
+
+
+def fdr_filter(results, alpha):
+    """Keep results whose Benjamini-Hochberg q-value passes `alpha`.
+
+    Each item is a dict with a 'p-value' key; the surviving items are returned
+    with an added 'q-value' key. Input order is preserved.
+    """
+    if not results:
+        return []
+    qvals = benjamini_hochberg([r["p-value"] for r in results])
     kept = []
-    for i, r in enumerate(results):
-        adjusted = (r["p-value"] * query_size) / (i + 1)
-        if adjusted <= alpha:
+    for r, q in zip(results, qvals):
+        if q <= alpha:
+            r = dict(r, **{"q-value": q})
             kept.append(r)
     return kept

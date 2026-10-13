@@ -76,18 +76,50 @@ class TestDispatch(unittest.TestCase):
             enrichment.score("nope", k=1, t=1, q=1, N=1)
 
 
+class TestBenjaminiHochberg(unittest.TestCase):
+    def test_known_values(self):
+        # Classic worked example: p = [0.01, 0.02, 0.03, 0.04, 0.05], m = 5
+        # BH q = p * m / rank, then monotone from the top:
+        #   rank5: 0.05*5/5 = 0.05
+        #   rank4: 0.04*5/4 = 0.05
+        #   rank3: 0.03*5/3 = 0.05
+        #   rank2: 0.02*5/2 = 0.05
+        #   rank1: 0.01*5/1 = 0.05
+        q = enrichment.benjamini_hochberg([0.01, 0.02, 0.03, 0.04, 0.05])
+        for v in q:
+            self.assertAlmostEqual(v, 0.05, places=6)
+
+    def test_preserves_input_order(self):
+        # smallest p-value is last in the input; its q-value must stay last
+        q = enrichment.benjamini_hochberg([0.9, 0.5, 1e-6])
+        self.assertEqual(min(range(len(q)), key=lambda i: q[i]), 2)
+
+    def test_qvalues_capped_at_one(self):
+        q = enrichment.benjamini_hochberg([0.6, 0.8, 0.95])
+        self.assertTrue(all(v <= 1.0 for v in q))
+
+    def test_scales_with_number_of_tests_not_sample_size(self):
+        # single test → q-value equals the p-value (not multiplied by anything else)
+        q = enrichment.benjamini_hochberg([0.03])
+        self.assertAlmostEqual(q[0], 0.03, places=6)
+
+
 class TestFdrFilter(unittest.TestCase):
-    def test_keeps_significant_sorted_results(self):
+    def test_keeps_significant_results(self):
         results = [
             {"p-value": 1e-10},
             {"p-value": 1e-5},
             {"p-value": 0.9},
         ]
-        kept = enrichment.fdr_filter(results, alpha=0.05, query_size=10)
+        kept = enrichment.fdr_filter(results, alpha=0.05)
         self.assertEqual(len(kept), 2)
 
+    def test_adds_qvalue_key(self):
+        kept = enrichment.fdr_filter([{"p-value": 1e-9}], alpha=0.05)
+        self.assertIn("q-value", kept[0])
+
     def test_empty_input(self):
-        self.assertEqual(enrichment.fdr_filter([], alpha=0.05, query_size=10), [])
+        self.assertEqual(enrichment.fdr_filter([], alpha=0.05), [])
 
 
 if __name__ == "__main__":

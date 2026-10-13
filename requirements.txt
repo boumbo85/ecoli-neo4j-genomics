@@ -3,6 +3,10 @@
 py2neo>=2021.2
 scipy>=1.7
 
+# Multiple-testing correction (Benjamini-Hochberg). Optional: enrichment.py
+# falls back to an equivalent pure-Python implementation if it is missing.
+statsmodels>=0.13
+
 # Visualisation (plot_enrichment.py)
 matplotlib>=3.5
 
