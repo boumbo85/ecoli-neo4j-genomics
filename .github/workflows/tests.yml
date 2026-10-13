@@ -22,7 +22,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install "numpy<2" scipy
+          pip install "numpy<2" scipy statsmodels
 
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
+
+      - name: Positive control (trp operon)
+        run: python validate.py
