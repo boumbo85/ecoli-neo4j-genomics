@@ -111,12 +111,68 @@ d'identifiants anonymes.
 
 ---
 
+## Validation (contrôle positif)
+
+Un outil qui « tourne » n'est pas un outil qui « marche ». Pour montrer que la méthode retrouve
+une biologie connue, `validate.py` lui donne un cas d'école : l'**opéron trp** (`trpA–E`,
+b1260–b1264), cinq gènes qui fabriquent le L-tryptophane.
+
+```bash
+python validate.py
+```
+
+```
+pathway         p-value     q-value     overlap  description
+TRPSYN-PWY      2.11e-15    1.27e-14    5/5      L-tryptophan biosynthesis
+COMPLETE-ARO-PWY 2.16e-12   6.49e-12    5/20     superpathway of aromatic amino acid biosynthesis
+ALL-CHORISMATE-PWY 4.44e-10 8.88e-10    5/58     superpathway of chorismate metabolism
+PASS: top hit is TRPSYN-PWY (L-tryptophan biosynthesis), p = 2.11e-15
+```
+
+L'opéron ressort en tête sur la biosynthèse du L-tryptophane, suivi des superpathways des acides
+aminés aromatiques et du chorismate — exactement la hiérarchie attendue, puisque le tryptophane
+dérive du chorismate. Le test tourne sans Neo4j (il lit les mêmes fichiers `csv/`), donc il
+s'exécute aussi en CI.
+
+## Méthodes & choix de conception
+
+Les questions qu'un jury pose, répondues d'emblée.
+
+- **D'où viennent les sets de gènes ?** `query/set1.txt` est un set *contrôle* au résultat connu,
+  utilisé pour construire et vérifier l'outil. `query/query6.txt` (= « set 6 », 113 gènes) est le
+  set d'étude réellement analysé. `positive_control_trp.txt` est l'opéron trp ci-dessus.
+- **Pourquoi binomial par défaut, pas hypergéométrique ?** L'enrichissement est un tirage *sans*
+  remise, donc le modèle exact est l'hypergéométrique. Le binomial l'approxime bien quand la
+  requête est petite devant la population — règle usuelle `n/N < 0,1`. Ici
+  `n/N = 113/4315 = 0,026`, l'approximation est donc légitime, et binomial/hypergéométrique
+  donnent les mêmes résultats en pratique. Les deux sont dispo via `--measure` ; `hypergeometric`
+  pour le test exact.
+- **Quel background ?** Le génome entier (4315 gènes). Si la requête vient d'un dosage qui ne
+  couvre qu'un sous-ensemble de gènes (ex. une puce), le bon background est ce sous-ensemble, pas
+  le génome — ça change les p-values. Un background personnalisé est dans la feuille de route.
+- **Tests multiples.** Les p-values sont ajustées par Benjamini-Hochberg (`-c`), reportées en
+  q-values. Voir la note ci-dessous.
+- **Coexpression STRING** chargée dans le graphe mais pas encore utilisée par le test. Elle est là
+  pour une future analyse « ces gènes sont-ils plus coexprimés qu'attendu ? » ; d'ici là, autant
+  dire honnêtement qu'elle n'est pas exploitée.
+
+> **Un bug corrigé, qui vaut d'être raconté.** Le rapport du projet avait déjà noté que les
+> comptes de résultats ajustés et bruts étaient quasi identiques « ce qui ne devrait pas arriver —
+> probablement un bug ». C'en était un : la correction d'origine divisait par le *rang* mais
+> multipliait par la *taille de la requête* au lieu du *nombre de tests*. `enrichment.py`
+> implémente maintenant correctement Benjamini-Hochberg (via `statsmodels`, avec un repli
+> pur-Python équivalent), et les tests unitaires figent les q-values attendues.
+
+---
+
 ## Structure du projet
 
 ```
 .
 ├── app.py                     # outil principal d'enrichissement (CLI + requêtes Cypher)
-├── enrichment.py              # mesures statistiques (fonctions pures, testées)
+├── enrichment.py              # mesures statistiques + FDR BH (fonctions pures, testées)
+├── validate.py                # contrôle positif (opéron trp), sans Neo4j
+├── plot_enrichment.py         # bar chart des top termes enrichis
 ├── load_graph.cypher          # construit le graphe depuis csv/ (LOAD CSV)
 ├── load_graph.sh              # copie les CSV + exécute load_graph.cypher
 ├── docker-compose.yml         # instance Neo4j reproductible
@@ -221,11 +277,13 @@ Gene Ontology (`go-basic.obo`), STRING v12.
 
 Ce qui ferait passer ce projet d'un bon travail académique à une pièce de portfolio :
 
-- [ ] **CI de bout en bout** — lancer Neo4j comme service dans GitHub Actions et exécuter une vraie requête d'enrichissement, pour tester tout le pipeline, pas seulement les stats.
-- [ ] **Packager la CLI** — un `pyproject.toml` + point d'entrée (`ecoli-enrich ...`) au lieu d'appeler `app.py` directement.
-- [ ] **Tests multiples** — remplacer le FDR fait main par le Benjamini-Hochberg de `statsmodels` et reporter des q-values.
-- [ ] **Sortie interactive** — exporter les résultats en table HTML triable, et un nuage de points GO façon Revigo.
-- [ ] **Généraliser au-delà d'E. coli** — paramétrer l'organisme pour que le même schéma de graphe serve à n'importe quel génome annoté.
+- [x] **FDR correct** — Benjamini-Hochberg via `statsmodels`, q-values reportées, testé unitairement.
+- [x] **Contrôle positif** — validation sur l'opéron trp, exécutée en CI.
+- [ ] **Background personnalisé** — accepter une liste de gènes de référence (spécifique au dosage) au lieu du génome entier.
+- [ ] **Exploiter les arêtes STRING** — tester si un set de requête est plus coexprimé qu'attendu.
+- [ ] **CI de bout en bout** — lancer Neo4j comme service dans GitHub Actions et exécuter une vraie requête d'enrichissement.
+- [ ] **Packager la CLI** — un `pyproject.toml` + point d'entrée (`ecoli-enrich ...`).
+- [ ] **Généraliser au-delà d'E. coli** — paramétrer l'organisme pour que le même schéma serve à n'importe quel génome annoté.
 
 > **Leçons retenues.** Trois réflexes que ce projet m'a appris, désormais appliqués dès le 1er commit :
 > les secrets et chemins locaux ne vont jamais dans un dépôt (variables d'environnement + `.gitignore`
