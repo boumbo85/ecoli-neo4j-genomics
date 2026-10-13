@@ -32,3 +32,9 @@ jobs:
 
       - name: Co-expression cohesion (trp operon, quick)
         run: python coexpression_analysis.py query/positive_control_trp.txt -n 500
+
+      - name: Negative control (random gene sets)
+        run: python negative_control.py
+
+      - name: Concordance with reference tool
+        run: python concordance.py
